@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { useRegisterSW } from "virtual:pwa-register/react";
 import {
   compareTasks,
   isTaskDueToday,
@@ -146,6 +147,7 @@ function renderProjectTree(
 }
 
 export default function App() {
+  const { needRefresh: [needRefresh], updateServiceWorker } = useRegisterSW({ immediate: true });
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [timezone, setTimezone] = useState("Asia/Tokyo");
@@ -497,6 +499,7 @@ export default function App() {
             <span className={`${styles.statusPill} ${styles[`status${status}`]}`}><span className={styles.statusDot} />{statusText}</span>
           </div>
         </div>
+        {needRefresh && <div className={styles.offlineBanner} role="status"><span>{t.newVersionAvailable}</span><button type="button" className={styles.smallPrimary} onClick={() => { void updateServiceWorker(true); }}>{t.reload}</button></div>}
         {status === "reauth" && <div className={styles.reauthBanner} role="alert"><span>{t.reauth}</span><button type="button" className={styles.smallPrimary} onClick={() => window.location.reload()}>{t.login}</button></div>}
         {status === "offline" && <div className={styles.offlineBanner} role="status">{t.offline}</div>}
         {error && <div className={styles.errorBanner} role="alert">{error}</div>}

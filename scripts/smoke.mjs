@@ -250,6 +250,29 @@ try {
   assert.match(html, /<html[\s>]/i);
   assert.match(html, /<title>task<\/title>/);
   assert.match(html, /id="root"/);
+  assert.match(html, /<link\b(?=[^>]*\brel="manifest")(?=[^>]*\bcrossorigin="use-credentials")[^>]*>/i);
+  assert.match(html, /rel="apple-touch-icon"/i);
+  const appleTouchIcon = await fetchSmoke(`${baseUrl}/icons/apple-touch-icon.png`);
+  assert.equal(appleTouchIcon.status, 200, "GET /icons/apple-touch-icon.png should return 200");
+
+  const manifestResponse = await fetchSmoke(`${baseUrl}/manifest.webmanifest`);
+  assert.equal(manifestResponse.status, 200, "GET /manifest.webmanifest should return 200");
+  const manifest = await manifestResponse.json();
+  assert.equal(manifest.name, "task");
+  assert.equal(manifest.short_name, "task");
+  assert.equal(manifest.start_url, "/");
+  assert.equal(manifest.display, "standalone");
+  assert.ok(manifest.icons.some(({ sizes }) => sizes === "192x192"));
+  assert.ok(manifest.icons.some(({ sizes }) => sizes === "512x512"));
+  assert.ok(manifest.icons.some(({ purpose }) => String(purpose).split(/\s+/).includes("maskable")));
+  for (const { src } of manifest.icons) {
+    const icon = await fetchSmoke(new URL(src, baseUrl));
+    assert.equal(icon.status, 200, `GET ${src} should return 200`);
+  }
+
+  const serviceWorker = await fetchSmoke(`${baseUrl}/sw.js`);
+  assert.equal(serviceWorker.status, 200, "GET /sw.js should return 200");
+  assert.match(serviceWorker.headers.get("content-type") ?? "", /javascript/i);
 
   const health = await fetchSmoke(`${baseUrl}/api/health`);
   assert.equal(health.status, 200, "GET /api/health should return 200");
@@ -262,7 +285,7 @@ try {
   assert.equal(missing.headers.get("cache-control"), "no-store");
   assert.deepEqual(await missing.json(), { error: "not_found" });
 
-  console.log("Smoke test passed: app HTML, API health/cache policy, and JSON API 404.");
+  console.log("Smoke test passed: app shell, PWA assets, API health/cache policy, and JSON API 404.");
 } catch (error) {
   if (controller.signal.aborted) console.error(`Smoke timed out during ${phase}.`);
   console.error(error);

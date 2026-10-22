@@ -20,6 +20,8 @@
     "@vitejs/plugin-react": "^5.0.0",
     "fake-indexeddb": "^6.2.6",
     "vite": "^8.3.0",
-    "vitest": "4.1.0"
+    "vite-plugin-pwa": "^2.0.0",
+    "vitest": "4.1.0",
+    "workbox-window": "^7.4.1"
   }
 }
