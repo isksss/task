@@ -206,6 +206,9 @@ importers:
       '@task/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      dexie:
+        specifier: ^4.4.6
+        version: 4.4.6
       react:
         specifier: ^19.2.0
         version: 19.3.1
@@ -221,10 +224,16 @@ importers:
         version: 19.3.0(@types/react@19.3.0)
       '@vitejs/plugin-react':
         specifier: ^5.0.0
-        version: 5.2.0(supports-color@10.2.2)(vite@8.3.4(esbuild@0.28.1))
+        version: 5.2.0(supports-color@10.2.2)(vite@8.3.4(esbuild@0.28.2))
+      fake-indexeddb:
+        specifier: ^6.2.6
+        version: 6.2.6
       vite:
         specifier: ^8.3.0
-        version: 8.3.4(esbuild@0.28.1)
+        version: 8.3.4(esbuild@0.28.2)
+      vitest:
+        specifier: 4.1.0
+        version: 4.1.0(vite@8.3.4(esbuild@0.28.2))
 
   packages/shared: {}
 
@@ -1371,6 +1380,9 @@ packages:
     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
     engines: {node: '>=8'}
 
+  dexie@4.4.6:
+    resolution: {integrity: sha512-hJP/BO6mjB+tX6hToIO1kmxYLNmun90wYbfcoAoLpKEyDYal/k33dg0TAfoUe2TDsbbLoVIzljJ3BN2UbR5EOg==}
+
   electron-to-chromium@1.5.462:
     resolution: {integrity: sha512-9qpCBlXPy5v7n1Q7WTO5rW2StI4WNQhl96HpgXRZLPlNoXAD0LbsQUflovQYAO44Yia073ISusqohncvGSMbGA==}
 
@@ -1400,6 +1412,10 @@ packages:
   expect-type@1.4.0:
     resolution: {integrity: sha512-KfYbmpRm0VbLjEvVa9yGwCi9GI34xvi7A/HXYWQO65CSD2u3MczUJSuwXKFIxlGsgBQizV9q5J9NHj4VG0n+pA==}
     engines: {node: '>=12.0.0'}
+
+  fake-indexeddb@6.2.6:
+    resolution: {integrity: sha512-ihhmr0KoET51jT8R4YhbUYuLLvr1qqO6INISygtN16i8loR8kAxtAUr4+EKHTSMjL+lggaAn4OC7DRqzrNgnuQ==}
+    engines: {node: '>=18'}
 
   fdir@6.5.0:
     resolution: {integrity: sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg==}
@@ -2555,7 +2571,7 @@ snapshots:
     dependencies:
       csstype: 3.2.3
 
-  '@vitejs/plugin-react@5.2.0(supports-color@10.2.2)(vite@8.3.4(esbuild@0.28.1))':
+  '@vitejs/plugin-react@5.2.0(supports-color@10.2.2)(vite@8.3.4(esbuild@0.28.2))':
     dependencies:
       '@babel/core': 7.29.7(supports-color@10.2.2)
       '@babel/plugin-transform-react-jsx-self': 7.29.7(@babel/core@7.29.7(supports-color@10.2.2))
@@ -2563,7 +2579,7 @@ snapshots:
       '@rolldown/pluginutils': 1.0.0-rc.3
       '@types/babel__core': 7.20.5
       react-refresh: 0.18.0
-      vite: 8.3.4(esbuild@0.28.1)
+      vite: 8.3.4(esbuild@0.28.2)
     transitivePeerDependencies:
       - supports-color
 
@@ -2583,6 +2599,14 @@ snapshots:
       magic-string: 0.30.21
     optionalDependencies:
       vite: 8.3.4(esbuild@0.28.1)
+
+  '@vitest/mocker@4.1.0(vite@8.3.4(esbuild@0.28.2))':
+    dependencies:
+      '@vitest/spy': 4.1.0
+      estree-walker: 3.0.3
+      magic-string: 0.30.21
+    optionalDependencies:
+      vite: 8.3.4(esbuild@0.28.2)
 
   '@vitest/pretty-format@4.1.0':
     dependencies:
@@ -2653,6 +2677,8 @@ snapshots:
       supports-color: 10.2.2
 
   detect-libc@2.1.2: {}
+
+  dexie@4.4.6: {}
 
   electron-to-chromium@1.5.462: {}
 
@@ -2726,6 +2752,8 @@ snapshots:
       '@types/estree': 1.0.9
 
   expect-type@1.4.0: {}
+
+  fake-indexeddb@6.2.6: {}
 
   fdir@6.5.0(picomatch@4.0.7):
     optionalDependencies:
@@ -3028,6 +3056,17 @@ snapshots:
       esbuild: 0.28.1
       fsevents: 2.3.3
 
+  vite@8.3.4(esbuild@0.28.2):
+    dependencies:
+      lightningcss: 1.33.0
+      picomatch: 4.0.7
+      postcss: 8.5.31
+      rolldown: 1.2.14
+      tinyglobby: 0.2.17
+    optionalDependencies:
+      esbuild: 0.28.2
+      fsevents: 2.3.3
+
   vitest@4.1.0(vite@8.3.4(esbuild@0.28.1)):
     dependencies:
       '@vitest/expect': 4.1.0
@@ -3049,6 +3088,31 @@ snapshots:
       tinyglobby: 0.2.17
       tinyrainbow: 3.2.0
       vite: 8.3.4(esbuild@0.28.1)
+      why-is-node-running: 2.3.0
+    transitivePeerDependencies:
+      - msw
+
+  vitest@4.1.0(vite@8.3.4(esbuild@0.28.2)):
+    dependencies:
+      '@vitest/expect': 4.1.0
+      '@vitest/mocker': 4.1.0(vite@8.3.4(esbuild@0.28.2))
+      '@vitest/pretty-format': 4.1.0
+      '@vitest/runner': 4.1.0
+      '@vitest/snapshot': 4.1.0
+      '@vitest/spy': 4.1.0
+      '@vitest/utils': 4.1.0
+      es-module-lexer: 2.3.2
+      expect-type: 1.4.0
+      magic-string: 0.30.21
+      obug: 2.2.1
+      pathe: 2.0.3
+      picomatch: 4.0.7
+      std-env: 4.3.0
+      tinybench: 2.9.0
+      tinyexec: 1.3.1
+      tinyglobby: 0.2.17
+      tinyrainbow: 3.2.0
+      vite: 8.3.4(esbuild@0.28.2)
       why-is-node-running: 2.3.0
     transitivePeerDependencies:
       - msw

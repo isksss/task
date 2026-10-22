@@ -9,7 +9,7 @@
     "dev": "pnpm --filter @task/web build && pnpm --filter @task/api dev",
     "typecheck": "pnpm --recursive --if-present typecheck",
     "build": "pnpm --filter @task/web build && pnpm --filter @task/api build",
-    "test": "pnpm --filter @task/api test",
+    "test": "pnpm --filter @task/api test && pnpm --filter @task/web test",
     "smoke": "node scripts/smoke.mjs",
     "check:prod-guard": "node scripts/check-prod-guard.mjs"
   },

@@ -4,6 +4,7 @@ import { ensureLocalSchema } from "./schema";
 import {
   handleSyncRequest,
   purgeExpiredData,
+  purgeTrashEntity,
   readUserSettings,
   requestBody,
   updateSettings,
@@ -61,6 +62,22 @@ app.post("/api/sync", async (c) => {
   } catch (error) {
     console.error("Sync failed", error);
     return c.json({ error: "sync_failed" }, 500);
+  }
+});
+
+app.post("/api/trash/purge", async (c) => {
+  let body: unknown;
+  try {
+    body = await requestBody(c.req.raw);
+  } catch (error) {
+    return c.json({ error: error instanceof RangeError ? "request_too_large" : "invalid_request" }, error instanceof RangeError ? 413 : 400);
+  }
+  try {
+    const result = await purgeTrashEntity(c.env as SyncEnv, c.get("user"), body);
+    return c.json(result.body, result.status);
+  } catch (error) {
+    console.error("Trash purge failed", error);
+    return c.json({ error: "purge_failed" }, 500);
   }
 });
 

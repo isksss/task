@@ -60,6 +60,45 @@ describe("POST /api/sync", () => {
     ).toEqual({ count: 1 });
   });
 
+  it("returns current values when existing-row fields lose an LWW conflict", async () => {
+    const workerEnv = makeTestEnv();
+    const id = crypto.randomUUID();
+    const initialTs = Date.now() - 60_000;
+    const winnerTs = initialTs + 20_000;
+    await postSync(workerEnv, syncBody([
+      taskChange({
+        title: versioned("initial title", initialTs),
+        note: versioned("initial note", initialTs),
+      }, id),
+    ]));
+    await postSync(workerEnv, syncBody([
+      taskChange({ title: versioned("winner", winnerTs) }, id),
+    ]));
+
+    const partial = taskChange({
+      title: versioned("stale title", initialTs + 10_000),
+      note: versioned("accepted note", initialTs + 30_000),
+    }, id);
+    const partialResponse = await postSync(workerEnv, syncBody([partial]));
+    const partialBody = (await partialResponse.json()) as SyncResponse;
+    expect(partialBody.rejected).toHaveLength(1);
+    expect(partialBody.rejected[0]).toMatchObject({
+      change_id: partial.change_id,
+      reason: "field_conflict",
+      current: { entity: "task", id, title: "winner", note: "accepted note" },
+    });
+
+    const losing = taskChange({ title: versioned("older title", initialTs + 15_000) }, id);
+    const losingResponse = await postSync(workerEnv, syncBody([losing]));
+    const losingBody = (await losingResponse.json()) as SyncResponse;
+    expect(losingBody.rejected).toHaveLength(1);
+    expect(losingBody.rejected[0]).toMatchObject({
+      change_id: losing.change_id,
+      reason: "no_fields_applied",
+      current: { entity: "task", id, title: "winner" },
+    });
+  });
+
   it("rejects HLC device IDs containing non-ASCII characters", async () => {
     const workerEnv = makeTestEnv();
     const change = taskChange({ title: versioned("invalid device") });
@@ -151,6 +190,98 @@ describe("POST /api/sync", () => {
         .bind(grandchild, owner, triggerOnlyProject)
         .run(),
     ).rejects.toThrow("project_depth_exceeded");
+  });
+
+  it("immediately purges a project deletion batch and records sync tombstones", async () => {
+    const sub = crypto.randomUUID();
+    const workerEnv = makeTestEnv(sub);
+    const rootId = crypto.randomUUID();
+    const childId = crypto.randomUUID();
+    const taskId = crypto.randomUUID();
+    const created = await postSync(
+      workerEnv,
+      syncBody([
+        projectChange({ name: versioned("root") }, rootId),
+        projectChange({ name: versioned("child"), parent_id: versioned(rootId) }, childId),
+        taskChange({ title: versioned("nested task"), project_id: versioned(childId) }, taskId),
+      ]),
+    );
+    expect(((await created.json()) as SyncResponse).rejected).toEqual([]);
+    const deletedAt = new Date().toISOString();
+    const batchId = crypto.randomUUID();
+    await postSync(
+      workerEnv,
+      syncBody([projectChange({ deleted_at: versioned(deletedAt), deleted_batch_id: versioned(batchId) }, rootId)]),
+    );
+
+    const request = {
+      change_id: crypto.randomUUID(),
+      entity: "project",
+      id: rootId,
+      batch_id: batchId,
+    };
+    const purge = () => app.request(
+      "/api/trash/purge",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request),
+      },
+      workerEnv,
+    );
+    const response = await purge();
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(await env.DB.prepare("SELECT id FROM projects WHERE id IN (?, ?)").bind(rootId, childId).all()).toMatchObject({ results: [] });
+    expect(await env.DB.prepare("SELECT id FROM tasks WHERE id = ?").bind(taskId).first()).toBeNull();
+    expect(await env.DB.prepare("SELECT entity, id FROM tombstones WHERE id IN (?, ?, ?) ORDER BY entity, id").bind(rootId, childId, taskId).all()).toMatchObject({ results: expect.arrayContaining([
+      { entity: "project", id: rootId },
+      { entity: "project", id: childId },
+      { entity: "task", id: taskId },
+    ]) });
+    const retry = await purge();
+    expect(retry.status).toBe(200);
+  });
+
+  it("resumes a project batch purge after its root row is already gone", async () => {
+    const sub = crypto.randomUUID();
+    const workerEnv = makeTestEnv(sub);
+    const rootId = crypto.randomUUID();
+    const childId = crypto.randomUUID();
+    const taskId = crypto.randomUUID();
+    await postSync(workerEnv, syncBody([
+      projectChange({ name: versioned("root") }, rootId),
+      projectChange({ name: versioned("child"), parent_id: versioned(rootId) }, childId),
+      taskChange({ title: versioned("task"), project_id: versioned(childId) }, taskId),
+    ]));
+    const batchId = crypto.randomUUID();
+    await postSync(workerEnv, syncBody([
+      projectChange({
+        deleted_at: versioned(new Date().toISOString()),
+        deleted_batch_id: versioned(batchId),
+      }, rootId),
+    ]));
+    const owner = await userId(sub);
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO tombstones (user_id, entity, id, purged_at, seq)
+         SELECT ?, 'project', ?, ?, seq_counter FROM users WHERE id = ?`,
+      ).bind(owner, rootId, new Date().toISOString(), owner),
+      env.DB.prepare("DELETE FROM projects WHERE user_id = ? AND id = ?").bind(owner, rootId),
+    ]);
+
+    const response = await app.request(
+      "/api/trash/purge",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ change_id: crypto.randomUUID(), entity: "project", id: rootId, batch_id: batchId }),
+      },
+      workerEnv,
+    );
+    expect(response.status).toBe(200);
+    expect(await env.DB.prepare("SELECT id FROM projects WHERE id = ?").bind(childId).first()).toBeNull();
+    expect(await env.DB.prepare("SELECT id FROM tasks WHERE id = ?").bind(taskId).first()).toBeNull();
   });
 
   it("refuses to resurrect a tombstoned task", async () => {

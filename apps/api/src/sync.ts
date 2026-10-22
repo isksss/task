@@ -1080,6 +1080,8 @@ async function applyChange(
   }
 
   const changedFields = winningFields(currentVersions, fields);
+  const requestedFields = Object.keys(change.fields);
+  const lostFields = !isNew && requestedFields.some((field) => !(field in changedFields));
   if (isNew && Object.keys(changedFields).length === 0) {
     return {
       rejected: {
@@ -1168,6 +1170,25 @@ async function applyChange(
       }
     }
     throw error;
+  }
+  if (lostFields) {
+    const updatedCurrent = change.entity === "task"
+      ? await readTask(env, user.id, change.id)
+      : change.entity === "project"
+        ? await readProject(env, user.id, change.id)
+        : await readSettings(env, user);
+    return {
+      rejected: {
+        change_id: change.change_id,
+        entity: change.entity,
+        id: change.id,
+        reason: requestedFields.every((field) => !(field in changedFields)) ? "no_fields_applied" : "field_conflict",
+        current: {
+          entity: change.entity,
+          ...(updatedCurrent ?? (change.entity === "task" ? defaultTask(change.id, now) : defaultProject(change.id))),
+        } as SyncRow,
+      } as RejectedChange,
+    };
   }
   return {};
 }
@@ -1345,6 +1366,96 @@ export async function updateSettings(
 
 export async function readUserSettings(env: SyncEnv, user: UserRow): Promise<UserSettingsState> {
   return readSettings(env, user);
+}
+
+export async function purgeTrashEntity(
+  env: SyncEnv,
+  user: UserRow,
+  body: unknown,
+): Promise<{ status: 200 | 400 | 409; body: { ok: true } | { error: string } }> {
+  if (
+    !isRecord(body) ||
+    !isUuid(body.change_id) ||
+    (body.entity !== "task" && body.entity !== "project") ||
+    !isUuid(body.id) ||
+    (body.batch_id !== undefined && body.batch_id !== null && !isUuid(body.batch_id)) ||
+    (body.entity === "task" && body.batch_id !== undefined)
+  ) {
+    return { status: 400, body: { error: "invalid_request" } };
+  }
+  const entity = body.entity;
+  const table = entity === "task" ? "tasks" : "projects";
+  const changeId = body.change_id;
+  const id = body.id;
+  const requestedBatchId = entity === "project" ? (body.batch_id as string | null | undefined) : undefined;
+  if (await wasApplied(env, user.id, changeId)) return { status: 200, body: { ok: true } };
+
+  const selected = await env.DB.prepare(
+    `SELECT deleted_at, deleted_batch_id FROM ${table} WHERE user_id = ? AND id = ?`,
+  )
+    .bind(user.id, id)
+    .first<{ deleted_at: string | null; deleted_batch_id: string | null }>();
+  if (selected?.deleted_at === null) return { status: 409, body: { error: "not_in_trash" } };
+  if (selected && requestedBatchId !== undefined && requestedBatchId !== selected.deleted_batch_id) {
+    return { status: 409, body: { error: "trash_batch_changed" } };
+  }
+  const batchId = selected?.deleted_batch_id ?? requestedBatchId ?? null;
+  if (!selected && (entity !== "project" || batchId === null || !(await getTombstone(env, user.id, "project", id)))) {
+    await env.DB.batch([appliedChangeStatement(env, user.id, changeId, new Date().toISOString())]);
+    return { status: 200, body: { ok: true } };
+  }
+
+  const targetRows: { entity: "task" | "project"; id: string; batchId: string | null }[] = [];
+  if (entity === "project" && batchId !== null) {
+    for (const target of ["project", "task"] as const) {
+      const targetTable = target === "project" ? "projects" : "tasks";
+      const rows = await env.DB.prepare(
+        `SELECT id FROM ${targetTable} WHERE user_id = ? AND deleted_at IS NOT NULL AND deleted_batch_id = ? ORDER BY id`,
+      )
+        .bind(user.id, batchId)
+        .all<{ id: string }>();
+      targetRows.push(...rows.results.map((row) => ({ entity: target, id: row.id, batchId })));
+    }
+  } else if (selected) {
+    targetRows.push({ entity, id, batchId });
+  }
+
+  const purgedAt = new Date().toISOString();
+  for (let offset = 0; offset < targetRows.length; offset += 30) {
+    const chunk = targetRows.slice(offset, offset + 30);
+    const statements: D1PreparedStatement[] = [];
+    for (const target of chunk) {
+      const targetTable = target.entity === "task" ? "tasks" : "projects";
+      statements.push(
+        env.DB.prepare(
+          `UPDATE users SET seq_counter = seq_counter + 1 WHERE id = ? AND EXISTS (
+            SELECT 1 FROM ${targetTable} WHERE user_id = ? AND id = ? AND deleted_at IS NOT NULL AND deleted_batch_id IS ?
+          )`,
+        ).bind(user.id, user.id, target.id, target.batchId),
+      );
+      statements.push(
+        env.DB.prepare(
+          `INSERT INTO tombstones (user_id, entity, id, purged_at, seq)
+           SELECT ?, ?, ?, ?, seq_counter FROM users WHERE id = ? AND EXISTS (
+             SELECT 1 FROM ${targetTable} WHERE user_id = ? AND id = ? AND deleted_at IS NOT NULL AND deleted_batch_id IS ?
+           ) ON CONFLICT(user_id, entity, id) DO UPDATE SET purged_at = excluded.purged_at, seq = excluded.seq`,
+        ).bind(user.id, target.entity, target.id, purgedAt, user.id, user.id, target.id, target.batchId),
+      );
+      statements.push(
+        env.DB.prepare(
+          `DELETE FROM ${targetTable} WHERE user_id = ? AND id = ? AND deleted_at IS NOT NULL AND deleted_batch_id IS ?`,
+        ).bind(user.id, target.id, target.batchId),
+      );
+    }
+    if (offset + chunk.length === targetRows.length) {
+      statements.push(appliedChangeStatement(env, user.id, changeId, purgedAt));
+    }
+    await env.DB.batch(statements);
+  }
+  if (targetRows.length === 0) {
+    await env.DB.batch([appliedChangeStatement(env, user.id, changeId, purgedAt)]);
+  }
+  return { status: 200, body: { ok: true } };
 }
 
 export async function purgeExpiredData(env: SyncEnv, now = new Date()): Promise<void> {
