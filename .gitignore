@@ -1,0 +1,10 @@
+node_modules/
+dist/
+apps/api/public/
+.wrangler/
+.cloudflare/
+coverage/
+.dev.vars
+.env
+.env.*
+!.env.example

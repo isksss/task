@@ -1,0 +1,24 @@
+{
+  "name": "@task/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "cf dev",
+    "build": "cf build",
+    "deploy:staging": "cf deploy --mode staging",
+    "deploy:production": "cf deploy --mode production",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "hono": "^4.13.13"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.64.0",
+    "@cloudflare/vitest-plugin": "1.4.6",
+    "@cloudflare/workers-types": "^5.20261021.1",
+    "vite": "^8.3.0",
+    "vitest": "4.1.0",
+    "wrangler": "^4.151.0"
+  }
+}

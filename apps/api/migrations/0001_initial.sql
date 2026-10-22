@@ -1,0 +1,1 @@
+-- Intentionally empty: initial schema will be added in the next implementation step.
