@@ -1,4 +1,5 @@
-import migration from "../migrations/0002_v1.sql?raw";
+import initialMigration from "../migrations/0002_v1.sql?raw";
+import v2Migration from "../migrations/0003_v2.sql?raw";
 
 function migrationStatements(sql: string): string[] {
   const statements: string[] = [];
@@ -18,8 +19,13 @@ function migrationStatements(sql: string): string[] {
 }
 
 export async function applySchema(db: D1Database): Promise<void> {
-  for (const statement of migrationStatements(migration)) {
+  for (const statement of migrationStatements(initialMigration)) {
     await db.prepare(statement).run();
+  }
+  const v2Applied = await db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'task_tags'")
+    .first<{ name: string }>();
+  if (!v2Applied) {
+    await db.batch(migrationStatements(v2Migration).map((statement) => db.prepare(statement)));
   }
 }
 

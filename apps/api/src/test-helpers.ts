@@ -21,7 +21,7 @@ export function versioned<T>(v: T, ts = Date.now(), counter = 0) {
   return { v, hlc: { ts, counter, device_id: "test-device" } };
 }
 
-export function taskChange(fields: Record<string, ReturnType<typeof versioned>>, id = crypto.randomUUID()) {
+export function taskChange(fields: Record<string, ReturnType<typeof versioned>>, id: string = crypto.randomUUID()) {
   return { change_id: crypto.randomUUID(), entity: "task" as const, id, fields };
 }
 

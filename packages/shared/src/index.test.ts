@@ -9,8 +9,11 @@ import {
   encodeHlc,
   isTaskDueToday,
   isTaskOverdue,
+  isValidRecurrence,
   mergeLww,
   nextHlc,
+  nextRecurrenceDate,
+  recurringTaskId,
   type Hlc,
   type Task,
   type TaskFields,
@@ -20,6 +23,8 @@ import {
 const task = (overrides: Partial<Task> = {}): Task => ({
   id: "task",
   project_id: null,
+  parent_task_id: null,
+  recurrence: null,
   title: "Task",
   note: "",
   done: false,
@@ -145,6 +150,30 @@ describe("wall-clock date helpers", () => {
     expect(
       new Date(wallClockToInstant("2024-11-03", "01:30", "America/New_York")).toISOString(),
     ).toBe("2024-11-03T05:30:00.000Z");
+  });
+});
+
+describe("recurrence helpers", () => {
+  it("computes daily and multi-weekday occurrences from the task's due date", () => {
+    expect(nextRecurrenceDate("2024-12-31", { frequency: "daily" })).toBe("2025-01-01");
+    expect(nextRecurrenceDate("2024-01-01", { frequency: "weekly", weekdays: [1, 3] })).toBe("2024-01-03");
+    expect(nextRecurrenceDate("2024-01-03", { frequency: "weekly", weekdays: [1, 3] })).toBe("2024-01-08");
+  });
+
+  it("clamps monthly and yearly occurrences to the corresponding month end", () => {
+    expect(nextRecurrenceDate("2024-01-31", { frequency: "monthly", day: 31 })).toBe("2024-02-29");
+    expect(nextRecurrenceDate("2024-01-10", { frequency: "yearly" })).toBe("2025-01-10");
+    expect(nextRecurrenceDate("2024-02-29", { frequency: "yearly" })).toBe("2025-02-28");
+    expect(nextRecurrenceDate("2028-02-29", { frequency: "yearly" })).toBe("2029-02-28");
+  });
+
+  it("validates recurrence shapes and produces the same occurrence ID deterministically", async () => {
+    expect(isValidRecurrence({ frequency: "weekly", weekdays: [1, 7] })).toBe(true);
+    expect(isValidRecurrence({ frequency: "weekly", weekdays: [1, 1] })).toBe(false);
+    expect(isValidRecurrence({ frequency: "yearly" })).toBe(true);
+    expect(isValidRecurrence({ frequency: "yearly", month: 2, day: 29 })).toBe(false);
+    const id = await recurringTaskId("7fe3d260-64dc-4db4-83cd-3c4d32b98b1a", "2024-02-29");
+    expect(id).toBe(await recurringTaskId("7fe3d260-64dc-4db4-83cd-3c4d32b98b1a", "2024-02-29"));
   });
 });
 

@@ -146,7 +146,7 @@ async function runSync(
     for (const change of purgeChanges) {
       const rejectedActive = payload.rejected.some((item) => {
         if (item.entity !== change.entity || item.id !== change.id) return false;
-        return item.current.entity !== "settings" && item.current.deleted_at === null;
+        return item.current.entity !== "settings" && item.current.entity !== "task_tag" && item.current.deleted_at === null;
       });
       if (rejectedActive) {
         await database.outbox.delete(change.change_id);

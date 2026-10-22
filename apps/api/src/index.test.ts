@@ -66,6 +66,7 @@ describe("API Worker", () => {
     const deletedBatchId = crypto.randomUUID();
     const otherTaskId = crypto.randomUUID();
     const otherProjectId = crypto.randomUUID();
+    const tagId = crypto.randomUUID();
 
     await exportEnv.DB.batch([
       exportEnv.DB.prepare("UPDATE users SET timezone = ?, locale = ?, digest_time = ? WHERE id = ?")
@@ -80,9 +81,9 @@ describe("API Worker", () => {
          VALUES (?, ?, NULL, ?, ?, ?, '{"name":{"ts":2,"counter":0,"device_id":"internal"}}', 42)`,
       ).bind(deletedProjectId, ownUser.id, "Deleted project", "2026-01-02T03:04:05.000Z", deletedBatchId),
       exportEnv.DB.prepare(
-        `INSERT INTO tasks (id, user_id, project_id, title, note, done, due_date, due_time, priority, created_at, deleted_at, deleted_batch_id, field_ts, seq)
-         VALUES (?, ?, ?, ?, ?, 1, ?, ?, 3, ?, NULL, NULL, '{"title":{"ts":3,"counter":0,"device_id":"internal"}}', 51)`,
-      ).bind(activeTaskId, ownUser.id, activeProjectId, "Own task", "Own note", "2026-01-03", "10:30", "2026-01-01T00:00:00.000Z"),
+        `INSERT INTO tasks (id, user_id, project_id, title, note, done, due_date, due_time, priority, created_at, deleted_at, deleted_batch_id, parent_task_id, recurrence, field_ts, seq)
+         VALUES (?, ?, ?, ?, ?, 1, ?, ?, 3, ?, NULL, NULL, NULL, ?, '{"title":{"ts":3,"counter":0,"device_id":"internal"}}', 51)`,
+      ).bind(activeTaskId, ownUser.id, activeProjectId, "Own task", "Own note", "2026-01-03", "10:30", "2026-01-01T00:00:00.000Z", '{"frequency":"yearly"}'),
       exportEnv.DB.prepare(
         `INSERT INTO tasks (id, user_id, project_id, title, note, done, due_date, due_time, priority, created_at, deleted_at, deleted_batch_id, field_ts, seq)
          VALUES (?, ?, ?, ?, '', 0, NULL, NULL, 0, ?, ?, ?, '{"done":{"ts":4,"counter":0,"device_id":"internal"}}', 52)`,
@@ -95,6 +96,9 @@ describe("API Worker", () => {
         `INSERT INTO tasks (id, user_id, project_id, title, note, done, due_date, due_time, priority, created_at, deleted_at, deleted_batch_id, field_ts, seq)
          VALUES (?, ?, NULL, ?, '', 0, NULL, NULL, 0, ?, NULL, NULL, '{"title":{"ts":5,"counter":0,"device_id":"private-clock"}}', 99)`,
       ).bind(otherTaskId, otherUser.id, "Other user's private task", "2026-01-01T00:00:00.000Z"),
+      exportEnv.DB.prepare("INSERT INTO tags (id, user_id, name) VALUES (?, ?, ?)").bind(tagId, ownUser.id, "Personal"),
+      exportEnv.DB.prepare("INSERT INTO task_tags (id, user_id, task_id, tag_id, active) VALUES (?, ?, ?, ?, 1)")
+        .bind(`${activeTaskId}:${tagId}`, ownUser.id, activeTaskId, tagId),
       exportEnv.DB.prepare(
         "INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh, auth, created_at) VALUES (?, ?, ?, ?, ?, ?)",
       ).bind(crypto.randomUUID(), ownUser.id, "https://push.example.test/private-endpoint", "private-p256dh-marker", "private-auth-marker", "2026-01-01T00:00:00.000Z"),
@@ -112,17 +116,21 @@ describe("API Worker", () => {
       version: number;
       tasks: Record<string, unknown>[];
       projects: Record<string, unknown>[];
+      tags: Record<string, unknown>[];
+      task_tags: Record<string, unknown>[];
       settings: Record<string, unknown>;
     };
     expect(exported).toMatchObject({
       format: "task-export",
-      version: 1,
+      version: 2,
       settings: { timezone: "Europe/Paris", locale: "en", digest_time: "09:15" },
     });
     expect(exported.tasks).toHaveLength(2);
     expect(exported.projects).toHaveLength(2);
+    expect(exported.tags).toEqual([{ id: tagId, name: "Personal", deleted_at: null }]);
+    expect(exported.task_tags).toEqual([{ id: `${activeTaskId}:${tagId}`, task_id: activeTaskId, tag_id: tagId, active: true }]);
     expect(exported.tasks).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: activeTaskId, done: true, title: "Own task" }),
+      expect.objectContaining({ id: activeTaskId, done: true, title: "Own task", recurrence: { frequency: "yearly" } }),
       expect.objectContaining({ id: deletedTaskId, deleted_at: "2026-01-02T03:04:05.000Z", deleted_batch_id: deletedBatchId }),
     ]));
     expect(exported.projects).toEqual(expect.arrayContaining([

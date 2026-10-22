@@ -1,6 +1,12 @@
 export type Priority = 0 | 1 | 2 | 3;
 export type Locale = "ja" | "en";
-export type SyncEntity = "task" | "project" | "settings";
+export type SyncEntity = "task" | "project" | "tag" | "task_tag" | "settings";
+
+export type Recurrence =
+  | { frequency: "daily" }
+  | { frequency: "weekly"; weekdays: number[] }
+  | { frequency: "monthly"; day: number }
+  | { frequency: "yearly" };
 
 export interface Hlc {
   ts: number;
@@ -15,6 +21,8 @@ export type VersionedFields<T extends object> = Partial<{
 
 export interface TaskFields {
   project_id: string | null;
+  parent_task_id: string | null;
+  recurrence: Recurrence | null;
   title: string;
   note: string;
   done: boolean;
@@ -45,6 +53,29 @@ export interface Project extends ProjectFields {
   seq: number;
 }
 
+export interface TagFields {
+  name: string;
+  deleted_at: string | null;
+}
+
+export interface Tag extends TagFields {
+  id: string;
+  field_ts: FieldTimestamps<TagFields>;
+  seq: number;
+}
+
+export interface TaskTagFields {
+  active: boolean;
+}
+
+export interface TaskTag extends TaskTagFields {
+  id: string;
+  task_id: string;
+  tag_id: string;
+  field_ts: FieldTimestamps<TaskTagFields>;
+  seq: number;
+}
+
 export interface UserSettings {
   timezone: string;
   locale: Locale;
@@ -70,6 +101,20 @@ export type ProjectChange = {
   fields: VersionedFields<ProjectFields>;
 };
 
+export type TagChange = {
+  change_id: string;
+  entity: "tag";
+  id: string;
+  fields: VersionedFields<TagFields>;
+};
+
+export type TaskTagChange = {
+  change_id: string;
+  entity: "task_tag";
+  id: string;
+  fields: VersionedFields<TaskTagFields>;
+};
+
 export type SettingsChange = {
   change_id: string;
   entity: "settings";
@@ -77,7 +122,7 @@ export type SettingsChange = {
   fields: VersionedFields<UserSettings>;
 };
 
-export type SyncChange = TaskChange | ProjectChange | SettingsChange;
+export type SyncChange = TaskChange | ProjectChange | TagChange | TaskTagChange | SettingsChange;
 
 export interface SyncRequest {
   since: number;
@@ -89,10 +134,12 @@ export interface SyncRequest {
 export type SyncRow =
   | ({ entity: "task" } & Task)
   | ({ entity: "project" } & Project)
+  | ({ entity: "tag" } & Tag)
+  | ({ entity: "task_tag" } & TaskTag)
   | ({ entity: "settings" } & UserSettingsState);
 
 export interface Tombstone {
-  entity: "task" | "project";
+  entity: "task" | "project" | "tag";
   id: string;
   purged_at: string;
   seq: number;
@@ -105,6 +152,8 @@ export type RejectedChange = {
 } & (
   | { entity: "task"; current: Extract<SyncRow, { entity: "task" }> }
   | { entity: "project"; current: Extract<SyncRow, { entity: "project" }> }
+  | { entity: "tag"; current: Extract<SyncRow, { entity: "tag" }> }
+  | { entity: "task_tag"; current: Extract<SyncRow, { entity: "task_tag" }> }
   | { entity: "settings"; current: Extract<SyncRow, { entity: "settings" }> }
 );
 
@@ -455,6 +504,78 @@ export function compareTasksByPriority(a: Task, b: Task): number {
 
 export function compareTasksByCreated(a: Task, b: Task): number {
   return compareCreated(a, b);
+}
+
+export function isValidRecurrence(value: unknown): value is Recurrence {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const recurrence = value as Record<string, unknown>;
+  if (recurrence.frequency === "daily") return Object.keys(recurrence).length === 1;
+  if (recurrence.frequency === "weekly") {
+    return Object.keys(recurrence).length === 2 && Array.isArray(recurrence.weekdays) &&
+      recurrence.weekdays.length > 0 && recurrence.weekdays.length <= 7 &&
+      recurrence.weekdays.every((day) => Number.isInteger(day) && Number(day) >= 1 && Number(day) <= 7) &&
+      new Set(recurrence.weekdays).size === recurrence.weekdays.length;
+  }
+  if (recurrence.frequency === "monthly") {
+    return Object.keys(recurrence).length === 2 && Number.isInteger(recurrence.day) && Number(recurrence.day) >= 1 && Number(recurrence.day) <= 31;
+  }
+  return recurrence.frequency === "yearly" && Object.keys(recurrence).length === 1;
+}
+
+function parseDateParts(value: string): [number, number, number] {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) throw new RangeError("Expected date YYYY-MM-DD");
+  const parts = [Number(match[1]), Number(match[2]), Number(match[3])] as [number, number, number];
+  const date = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+  if (date.getUTCFullYear() !== parts[0] || date.getUTCMonth() + 1 !== parts[1] || date.getUTCDate() !== parts[2]) {
+    throw new RangeError("Invalid date");
+  }
+  return parts;
+}
+
+function monthLength(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+function formatWallDate(year: number, month: number, day: number): string {
+  return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+/** Calculate the next recurrence from a wall-clock date without applying a timezone. */
+export function nextRecurrenceDate(dueDate: string, recurrence: Recurrence): string {
+  const [year, month, day] = parseDateParts(dueDate);
+  if (!isValidRecurrence(recurrence)) throw new RangeError("Invalid recurrence");
+  if (recurrence.frequency === "daily") {
+    const next = new Date(Date.UTC(year, month - 1, day + 1));
+    return formatWallDate(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate());
+  }
+  if (recurrence.frequency === "weekly") {
+    for (let offset = 1; offset <= 7; offset++) {
+      const next = new Date(Date.UTC(year, month - 1, day + offset));
+      const weekday = next.getUTCDay() || 7;
+      if (recurrence.weekdays.includes(weekday)) {
+        return formatWallDate(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate());
+      }
+    }
+    throw new RangeError("Weekly recurrence has no weekdays");
+  }
+  if (recurrence.frequency === "monthly") {
+    const nextMonth = month === 12 ? 1 : month + 1;
+    const nextYear = month === 12 ? year + 1 : year;
+    return formatWallDate(nextYear, nextMonth, Math.min(recurrence.day, monthLength(nextYear, nextMonth)));
+  }
+  const nextYear = year + 1;
+  return formatWallDate(nextYear, month, Math.min(day, monthLength(nextYear, month)));
+}
+
+/** Deterministic UUID shared by offline clients and the worker for a recurrence occurrence. */
+export async function recurringTaskId(taskId: string, dueDate: string): Promise<string> {
+  parseDateParts(dueDate);
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${taskId}:${dueDate}`)));
+  digest[6] = (digest[6]! & 0x0f) | 0x50;
+  digest[8] = (digest[8]! & 0x3f) | 0x80;
+  const hex = [...digest.slice(0, 16)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 export function compareTasks(a: Task, b: Task, sort: TaskSort): number {

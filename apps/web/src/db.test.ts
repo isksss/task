@@ -1,10 +1,12 @@
 import "fake-indexeddb/auto";
+import Dexie from "dexie";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { compareHlc, HLC_FUTURE_TOLERANCE_MS, type Task } from "@task/shared";
+import { compareHlc, HLC_FUTURE_TOLERANCE_MS, recurringTaskId, type Task } from "@task/shared";
 import {
   clearLocalData,
   createProject,
   createTask,
+  createTag,
   deleteProject,
   deleteTask,
   initializeDatabase,
@@ -12,6 +14,9 @@ import {
   TaskDatabase,
   updateProject,
   updateSettings,
+  updateTask,
+  updateTag,
+  setTaskTag,
 } from "./db";
 import { getSince } from "./db";
 import { ReauthenticationRequired, syncNow, waitForSync } from "./sync";
@@ -36,6 +41,8 @@ function serverTask(id: string, title: string, seq: number): Task {
   return {
     id,
     project_id: null,
+    parent_task_id: null,
+    recurrence: null,
     title,
     note: "",
     done: false,
@@ -70,12 +77,149 @@ describe("local database", () => {
     expect(queued).toHaveLength(1);
     expect(queued[0]).toMatchObject({ entity: "task", id: task.id });
     expect(Object.keys(queued[0]!.fields).sort()).toEqual([
-      "created_at", "deleted_at", "deleted_batch_id", "done", "due_date", "due_time", "note", "priority", "project_id", "title",
+      "created_at", "deleted_at", "deleted_batch_id", "done", "due_date", "due_time", "note", "parent_task_id", "priority", "project_id", "recurrence", "title",
     ]);
     expect(queued[0]?.fields.title?.v).toBe("Plan the week");
     expect(queued[0]?.fields.created_at?.v).toBe(task.created_at);
     expect(compareHlc(queued[0]!.fields.title!.hlc, task.field_ts.title!)).toBe(0);
     expect(await database.tasks.get(task.id)).toEqual(task);
+  });
+
+  it("upgrades version-one task rows with the v2 relationship and recurrence fields", async () => {
+    const name = `task-upgrade-${crypto.randomUUID()}`;
+    const legacy = new Dexie(name);
+    legacy.version(1).stores({
+      tasks: "&id, project_id, deleted_at, deleted_batch_id, done, due_date",
+      projects: "&id, parent_id, deleted_at, deleted_batch_id",
+      settings: "&id",
+      outbox: "&change_id, entity, id, created_at, [entity+id]",
+      meta: "&key",
+    });
+    await legacy.table("tasks").put({ id: "legacy", title: "old" });
+    legacy.close();
+
+    const database = new TaskDatabase(name);
+    opened.push(database);
+    await initializeDatabase(database);
+    expect(await database.tasks.get("legacy")).toMatchObject({ parent_task_id: null, recurrence: null });
+  });
+
+  it("writes tags as independent LWW relationships", async () => {
+    const database = await testDb();
+    const task = await createTask("Tagged task", null, database);
+    const first = await createTag("home", database);
+    const second = await createTag("work", database);
+    await Promise.all([
+      setTaskTag(task.id, first.id, true, database),
+      setTaskTag(task.id, second.id, true, database),
+    ]);
+
+    const links = await database.taskTags.toArray();
+    expect(links.filter((link) => link.active).map((link) => link.id).sort()).toEqual([
+      `${task.id}:${first.id}`,
+      `${task.id}:${second.id}`,
+    ].sort());
+    expect((await database.outbox.where("entity").equals("task_tag").toArray())).toHaveLength(2);
+    await setTaskTag(task.id, first.id, false, database);
+    expect((await database.taskTags.get(`${task.id}:${first.id}`))?.active).toBe(false);
+    expect((await updateTag(first.id, { name: "personal" }, database)).name).toBe("personal");
+  });
+
+  it("creates recurrence occurrences locally and cascades parent task trash by batch", async () => {
+    const database = await testDb();
+    const parent = await createTask("Monthly check", null, database);
+    const child = await createTask("Check item", null, database, parent.id);
+    await expect(createTask("Too deep", null, database, child.id)).rejects.toThrow(/subtasks/);
+    await updateTask(parent.id, {
+      due_date: "2025-01-31",
+      due_time: "10:15",
+      recurrence: { frequency: "monthly", day: 31 },
+    }, database);
+    const recurrenceOutbox = await database.outbox.where("[entity+id]").equals(["task", parent.id]).toArray();
+    expect(recurrenceOutbox.some((change) =>
+      change.fields.recurrence?.v && (change.fields.recurrence.v as { frequency?: string }).frequency === "monthly",
+    )).toBe(true);
+    await updateTask(parent.id, { done: true }, database);
+
+    const nextId = await recurringTaskId(parent.id, "2025-02-28");
+    expect(await database.tasks.get(nextId)).toMatchObject({
+      due_date: "2025-02-28",
+      due_time: "10:15",
+      done: false,
+      recurrence: { frequency: "monthly", day: 31 },
+    });
+    expect((await database.outbox.where("[entity+id]").equals(["task", nextId]).count())).toBe(1);
+    await updateTask(parent.id, { done: false }, database);
+    expect(await database.tasks.get(nextId)).toBeDefined();
+
+    await deleteTask(parent.id, database);
+    const deletedParent = await database.tasks.get(parent.id);
+    const deletedChild = await database.tasks.get(child.id);
+    expect(deletedChild?.deleted_batch_id).toBe(deletedParent?.deleted_batch_id);
+    await (await import("./db")).restoreTask(parent.id, database);
+    expect((await database.tasks.get(parent.id))?.deleted_at).toBeNull();
+    expect((await database.tasks.get(child.id))?.deleted_at).toBeNull();
+
+    await deleteTask(parent.id, database);
+    await purgeTrash("task", parent.id, database);
+    expect(await database.tasks.get(parent.id)).toBeUndefined();
+    expect(await database.tasks.get(child.id)).toBeUndefined();
+  });
+
+  it("generates a recurrence only on the false-to-true done transition", async () => {
+    const database = await testDb();
+    const task = await createTask("Monthly task", null, database);
+    await updateTask(task.id, { due_date: "2025-01-31" }, database);
+    await updateTask(task.id, { done: true }, database);
+    await updateTask(task.id, { recurrence: { frequency: "monthly", day: 31 } }, database);
+
+    const nextId = await recurringTaskId(task.id, "2025-02-28");
+    expect(await database.tasks.get(nextId)).toBeUndefined();
+    await updateTask(task.id, { done: false }, database);
+    await updateTask(task.id, { done: true }, database);
+    expect(await database.tasks.get(nextId)).toMatchObject({ done: false, due_date: "2025-02-28" });
+  });
+
+  it("does not generate recurrence occurrences from deleted task contexts", async () => {
+    const database = await testDb();
+    const source = await createTask("Deleted task", null, database);
+    await updateTask(source.id, {
+      due_date: "2025-01-31",
+      recurrence: { frequency: "monthly", day: 31 },
+    }, database);
+    await deleteTask(source.id, database);
+    await updateTask(source.id, { done: true }, database);
+    expect(await database.tasks.get(await recurringTaskId(source.id, "2025-02-28"))).toBeUndefined();
+
+    const project = await createProject("Deleted project", null, database);
+    const projectTask = await createTask("Project task", project.id, database);
+    await updateTask(projectTask.id, {
+      due_date: "2025-01-31",
+      recurrence: { frequency: "monthly", day: 31 },
+    }, database);
+    await database.projects.update(project.id, { deleted_at: new Date().toISOString() });
+    await expect(updateTask(projectTask.id, { done: true }, database)).rejects.toThrow(/trash/);
+    expect(await database.tasks.get(await recurringTaskId(projectTask.id, "2025-02-28"))).toBeUndefined();
+
+    const parent = await createTask("Deleted parent", null, database);
+    const child = await createTask("Child task", null, database, parent.id);
+    await updateTask(child.id, {
+      due_date: "2025-01-31",
+      recurrence: { frequency: "monthly", day: 31 },
+    }, database);
+    await database.tasks.update(parent.id, { deleted_at: new Date().toISOString() });
+    await updateTask(child.id, { done: true }, database);
+    expect(await database.tasks.get(await recurringTaskId(child.id, "2025-02-28"))).toBeUndefined();
+  });
+
+  it("counts deleted children when preventing a task from becoming a subtask", async () => {
+    const database = await testDb();
+    const parent = await createTask("Parent", null, database);
+    const otherParent = await createTask("Other parent", null, database);
+    const child = await createTask("Child", null, database, parent.id);
+    await deleteTask(child.id, database);
+
+    await expect(updateTask(parent.id, { parent_task_id: otherParent.id }, database)).rejects.toThrow(/subtasks/);
   });
 
   it("clears IndexedDB, browser storage, and caches before navigating to Access logout", async () => {
@@ -115,7 +259,10 @@ describe("local database", () => {
     const database = await testDb();
     const root = await createProject("Home", null, database);
     const child = await createProject("Repairs", root.id, database);
+    const otherProject = await createProject("Other", null, database);
     const nestedTask = await createTask("Fix the shelf", child.id, database);
+    const inboxSubtask = await createTask("Inbox subtask", null, database, nestedTask.id);
+    const otherProjectSubtask = await createTask("Other-project subtask", otherProject.id, database, nestedTask.id);
     const unrelatedTask = await createTask("Renew a pass", null, database);
     await deleteTask(unrelatedTask.id, database);
     const outboxBeforeProjectDelete = await database.outbox.count();
@@ -132,6 +279,8 @@ describe("local database", () => {
     expect(deletedRoot?.deleted_at).not.toBeNull();
     expect(deletedChild?.deleted_batch_id).toBe(deletedRoot?.deleted_batch_id);
     expect(deletedTask?.deleted_batch_id).toBe(deletedRoot?.deleted_batch_id);
+    expect((await database.tasks.get(inboxSubtask.id))?.deleted_batch_id).toBe(deletedRoot?.deleted_batch_id);
+    expect((await database.tasks.get(otherProjectSubtask.id))?.deleted_batch_id).toBe(deletedRoot?.deleted_batch_id);
     expect(deletedUnrelated?.deleted_batch_id).not.toBe(deletedRoot?.deleted_batch_id);
     expect(await database.outbox.count()).toBe(outboxBeforeProjectDelete + 1);
 
@@ -147,6 +296,8 @@ describe("local database", () => {
     expect((await database.projects.get(root.id))?.deleted_at).toBeNull();
     expect((await database.projects.get(child.id))?.deleted_at).toBeNull();
     expect((await database.tasks.get(nestedTask.id))?.deleted_at).toBeNull();
+    expect((await database.tasks.get(inboxSubtask.id))?.deleted_at).toBeNull();
+    expect((await database.tasks.get(otherProjectSubtask.id))?.deleted_at).toBeNull();
     expect((await database.tasks.get(unrelatedTask.id))?.deleted_at).not.toBeNull();
   });
 

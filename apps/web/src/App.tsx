@@ -9,12 +9,16 @@ import {
   todayInTimeZone,
   type Locale,
   type Project,
+  type Recurrence,
   type Task,
   type TaskSort,
+  type TaskTag,
+  type Tag,
 } from "@task/shared";
 import {
   createProject,
   createTask,
+  createTag,
   clearLocalData,
   db,
   deleteProject,
@@ -27,22 +31,25 @@ import {
   updateProject,
   updateSettings,
   updateTask,
+  updateTag,
+  setTaskTag,
 } from "./db";
 import { downloadExport, requestExportAfterSync } from "./export";
 import { clearDeviceDataConfirmation, dictionaries, getDefaultLocale, type Translation } from "./i18n";
 import { firstDayOfWeek, getMonthGridDates, getWeekDates, shiftCalendarDate, shiftCalendarMonth } from "./calendar";
+import { weeklyRecurrenceNeedsWeekday } from "./recurrence-form";
 import { ReauthenticationRequired, startSyncLoop, syncNow, syncSoon, waitForSync, type SyncStatus } from "./sync";
 import { disablePush, enablePush, pushAvailability, registerExistingPushSubscription } from "./push";
 import styles from "./App.module.css";
 
-type View = "all" | "inbox" | "today" | "overdue" | "trash" | "calendar" | "settings" | { projectId: string };
+type View = "all" | "inbox" | "today" | "overdue" | "trash" | "calendar" | "settings" | { projectId: string } | { tagId: string };
 type CalendarMode = "month" | "week";
 type PushStatus = "loading" | "unsupported" | "install-on-ios" | "denied" | "disabled" | "enabled" | "retry" | "working";
 
 const SORT_KEY = "task.sort-by-view.v1";
 
 function viewKey(view: View): string {
-  return typeof view === "string" ? view : `project:${view.projectId}`;
+  return typeof view === "string" ? view : "projectId" in view ? `project:${view.projectId}` : `tag:${view.tagId}`;
 }
 
 function loadSorts(): Record<string, TaskSort> {
@@ -90,8 +97,10 @@ function trapDialogFocus(event: KeyboardEvent<HTMLElement>, close: () => void): 
   }
 }
 
-function taskHeading(view: View, projects: Project[], t: Translation): string {
-  if (typeof view !== "string") return projects.find(({ id }) => id === view.projectId)?.name ?? t.projects;
+function taskHeading(view: View, projects: Project[], tags: Tag[], t: Translation): string {
+  if (typeof view !== "string") return "projectId" in view
+    ? projects.find(({ id }) => id === view.projectId)?.name ?? t.projects
+    : tags.find(({ id }) => id === view.tagId)?.name ?? t.tags;
   return ({ all: t.all, inbox: t.inbox, today: t.today, overdue: t.overdue, trash: t.trash, calendar: t.calendar, settings: t.settings })[view];
 }
 
@@ -153,6 +162,8 @@ export default function App() {
   const { needRefresh: [needRefresh], updateServiceWorker } = useRegisterSW({ immediate: true });
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [taskTags, setTaskTags] = useState<TaskTag[]>([]);
   const [timezone, setTimezone] = useState("Asia/Tokyo");
   const [locale, setLocale] = useState<Locale>(getDefaultLocale());
   const [digestTime, setDigestTime] = useState("08:00");
@@ -166,8 +177,12 @@ export default function App() {
   const [showCompleted, setShowCompleted] = useState(false);
   const [quickTitle, setQuickTitle] = useState("");
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [editingDueDate, setEditingDueDate] = useState("");
+  const [recurrenceFrequency, setRecurrenceFrequency] = useState("none");
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const [newTagOpen, setNewTagOpen] = useState(false);
+  const [collapsedSubtasks, setCollapsedSubtasks] = useState<Record<string, boolean>>({});
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(() => window.matchMedia("(max-width: 640px)").matches);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -246,13 +261,17 @@ export default function App() {
   }, [isMobile, sidebarOpen]);
 
   const refresh = useCallback(async () => {
-    const [nextTasks, nextProjects, settings] = await Promise.all([
+    const [nextTasks, nextProjects, nextTags, nextTaskTags, settings] = await Promise.all([
       db.tasks.toArray(),
       db.projects.toArray(),
+      db.tags.toArray(),
+      db.taskTags.toArray(),
       getSettings(),
     ]);
     setTasks(nextTasks);
     setProjects(nextProjects);
+    setTags(nextTags);
+    setTaskTags(nextTaskTags);
     setTimezone(settings.timezone);
     setLocale(settings.locale);
     setDigestTime(settings.digest_time);
@@ -287,28 +306,51 @@ export default function App() {
     }
   }, [refresh, t]);
 
+  function openTaskEditor(task: Task) {
+    setEditingDueDate(task.due_date ?? "");
+    setRecurrenceFrequency(task.recurrence?.frequency ?? "none");
+    setEditingTaskId(task.id);
+  }
+
   useEffect(() => {
     const taskId = new URLSearchParams(window.location.search).get("task");
-    if (!ready || !taskId || !tasks.some((task) => task.id === taskId && task.deleted_at === null)) return;
+    const task = taskId === null ? null : tasks.find((candidate) => candidate.id === taskId && candidate.deleted_at === null);
+    if (!ready || !task) return;
     setView("all");
-    setEditingTaskId(taskId);
+    openTaskEditor(task);
     window.history.replaceState(null, "", `${window.location.pathname}${window.location.hash}`);
   }, [ready, tasks]);
 
-  const selectedProjectId = typeof view === "string" ? null : view.projectId;
+  const selectedProjectId = typeof view === "string" || "tagId" in view ? null : view.projectId;
   const selectedProject = selectedProjectId === null ? null : projects.find(({ id }) => id === selectedProjectId) ?? null;
   const activeProjects = useMemo(() => projects.filter(({ deleted_at }) => deleted_at === null), [projects]);
+  const activeTags = useMemo(() => tags.filter(({ deleted_at }) => deleted_at === null), [tags]);
+  const taggedTaskIds = new Set(taskTags.filter((link) =>
+    link.active && activeTags.some((tag) => tag.id === link.tag_id),
+  ).map((link) => `${link.tag_id}:${link.task_id}`));
   const currentSort = sorts[viewKey(view)] ?? "due";
   const today = new Date();
-  const regularTasks = tasks.filter((task) => {
-    if (task.deleted_at !== null) return false;
-    if (!showCompleted && task.done) return false;
+  const matchesView = (task: Task) => {
     if (view === "inbox") return task.project_id === null;
     if (view === "today") return isTaskDueToday(task, today, timezone);
     if (view === "overdue") return isTaskOverdue(task, today, timezone);
-    if (typeof view !== "string") return task.project_id !== null && descendants(view.projectId, activeProjects).has(task.project_id);
+    if (typeof view !== "string") {
+      if ("projectId" in view) return task.project_id !== null && descendants(view.projectId, activeProjects).has(task.project_id);
+      return taggedTaskIds.has(`${view.tagId}:${task.id}`);
+    }
     return view === "all";
-  }).sort((a, b) => compareTasks(a, b, currentSort));
+  };
+  const visibleTasks = tasks.filter((task) =>
+    task.deleted_at === null && (showCompleted || !task.done) && matchesView(task),
+  );
+  const visibleTaskIds = new Set(visibleTasks.map(({ id }) => id));
+  const contextualParents = visibleTasks.flatMap((task) => {
+    if (task.parent_task_id === null || visibleTaskIds.has(task.parent_task_id)) return [];
+    const parent = tasks.find((candidate) => candidate.id === task.parent_task_id && candidate.deleted_at === null);
+    return parent ? [parent] : [];
+  });
+  const regularTasks = [...new Map([...visibleTasks.filter((task) => task.parent_task_id === null), ...contextualParents]
+    .map((task) => [task.id, task])).values()].sort((a, b) => compareTasks(a, b, currentSort));
   const activeCalendarTasks = tasks.filter((task) =>
     task.deleted_at === null && task.due_date !== null && (showCompleted || !task.done),
   );
@@ -327,6 +369,7 @@ export default function App() {
     .filter((task) => task.due_date === focusedCalendarDate)
     .sort((a, b) => compareTasks(a, b, currentSort));
   const trashedTasks = tasks.filter(({ deleted_at }) => deleted_at !== null);
+  const trashedTags = tags.filter(({ deleted_at }) => deleted_at !== null);
   const trashedProjects = projects.filter((project) => {
     if (project.deleted_at === null) return false;
     const parent = project.parent_id === null ? null : projects.find(({ id }) => id === project.parent_id);
@@ -334,6 +377,7 @@ export default function App() {
   });
   const editingTask = tasks.find(({ id, deleted_at }) => id === editingTaskId && deleted_at === null) ?? null;
   const editingProject = projects.find(({ id }) => id === editingProjectId) ?? null;
+  const editingTags = editingTask ? taskTags.filter((link) => link.task_id === editingTask.id && link.active).map((link) => link.tag_id) : [];
 
   const setCurrentSort = (value: TaskSort) => {
     const next = { ...sorts, [viewKey(view)]: value };
@@ -358,6 +402,18 @@ export default function App() {
     const dueDate = String(form.get("due_date") ?? "");
     const dueTime = String(form.get("due_time") ?? "");
     const projectId = String(form.get("project_id") ?? "");
+    const frequency = dueDate ? String(form.get("recurrence") ?? "none") : "none";
+    const weekdays = form.getAll("weekdays").map(Number);
+    if (weeklyRecurrenceNeedsWeekday(frequency, weekdays)) {
+      setError(t.weeklyRecurrenceRequiresWeekday);
+      return;
+    }
+    const recurrence: Recurrence | null = frequency === "daily" ? { frequency }
+      : frequency === "weekly" ? { frequency, weekdays }
+        : frequency === "monthly" ? { frequency, day: Number(form.get("monthly_day")) }
+            : frequency === "yearly" ? { frequency }
+              : null;
+    const selectedTags = form.getAll("tag_ids").map(String);
     void act(async () => {
       await updateTask(task.id, {
         title: String(form.get("title") ?? ""),
@@ -367,7 +423,11 @@ export default function App() {
         note: String(form.get("note") ?? ""),
         priority: Number(form.get("priority")) as Task["priority"],
         project_id: projectId || null,
+        recurrence,
       });
+      await Promise.all([...new Set([...editingTags, ...selectedTags])].map((tagId) =>
+        setTaskTag(task.id, tagId, selectedTags.includes(tagId)),
+      ));
       setEditingTaskId(null);
     });
   };
@@ -390,25 +450,48 @@ export default function App() {
     setEditingProjectId(null);
   };
 
-  const renderRegularTask = (task: Task) => (
-    <li key={task.id} className={styles.taskRow}>
-      <label className={styles.taskMain}>
-        <input
-          type="checkbox"
-          checked={task.done}
-          aria-label={`${task.done ? t.reopenTask : t.completeTask}${t.labelSeparator}${task.title}`}
-          onChange={(event) => { void act(() => updateTask(task.id, { done: event.target.checked })); }}
-        />
-        <span className={`${styles.taskTitle} ${task.done ? styles.done : ""}`}>{task.title}</span>
-      </label>
-      <div className={styles.taskMeta}>
-        {task.due_date && <span className={styles.due}>{formatTaskDue(task, locale)}</span>}
-        {task.priority > 0 && <span className={`${styles.priority} ${styles[`priority${task.priority}`]}`}>{priorityLabels[task.priority]}</span>}
-        <button type="button" className={styles.textButton} onClick={() => setEditingTaskId(task.id)}>{t.edit}</button>
-        <button type="button" className={styles.iconButton} aria-label={t.moveTaskToTrash.replace("{title}", task.title)} onClick={() => { void act(() => deleteTask(task.id)); }}>×</button>
-      </div>
-    </li>
-  );
+  const renderRegularTask = (task: Task, includeSubtasks = true) => {
+    const subtasks = includeSubtasks && task.parent_task_id === null
+      ? tasks.filter((child) => child.parent_task_id === task.id && child.deleted_at === null &&
+        (showCompleted || !child.done) && matchesView(child))
+      : [];
+    const collapsed = collapsedSubtasks[task.id] ?? false;
+    return (
+      <li key={task.id} className={styles.taskRow}>
+        <label className={styles.taskMain}>
+          <input
+            type="checkbox"
+            checked={task.done}
+            aria-label={`${task.done ? t.reopenTask : t.completeTask}${t.labelSeparator}${task.title}`}
+            onChange={(event) => { void act(() => updateTask(task.id, { done: event.target.checked })); }}
+          />
+          <span className={`${styles.taskTitle} ${task.done ? styles.done : ""}`}>{task.title}</span>
+        </label>
+        <div className={styles.taskMeta}>
+          {task.due_date && <span className={styles.due}>{formatTaskDue(task, locale)}</span>}
+          {task.priority > 0 && <span className={`${styles.priority} ${styles[`priority${task.priority}`]}`}>{priorityLabels[task.priority]}</span>}
+          <button type="button" className={styles.textButton} onClick={() => openTaskEditor(task)}>{t.edit}</button>
+          <button type="button" className={styles.iconButton} aria-label={t.moveTaskToTrash.replace("{title}", task.title)} onClick={() => { void act(() => deleteTask(task.id)); }}>×</button>
+        </div>
+        {subtasks.length > 0 && <div className={styles.subtaskGroup}>
+          <button type="button" className={styles.textButton} aria-expanded={!collapsed} onClick={() => setCollapsedSubtasks((state) => ({ ...state, [task.id]: !collapsed }))}>
+            {collapsed ? t.showSubtasks : t.hideSubtasks} · {subtasks.length}
+          </button>
+          {!collapsed && <ul className={styles.subtaskList}>{subtasks.map((child) => <li key={child.id} className={styles.subtaskRow}>
+            <label className={styles.taskMain}>
+              <input type="checkbox" checked={child.done} aria-label={`${child.done ? t.reopenTask : t.completeTask}${t.labelSeparator}${child.title}`} onChange={(event) => { void act(() => updateTask(child.id, { done: event.target.checked })); }} />
+              <span className={`${styles.taskTitle} ${child.done ? styles.done : ""}`}>{child.title}</span>
+            </label>
+            <div className={styles.taskMeta}>
+              {child.due_date && <span className={styles.due}>{formatTaskDue(child, locale)}</span>}
+              <button type="button" className={styles.textButton} onClick={() => openTaskEditor(child)}>{t.edit}</button>
+              <button type="button" className={styles.iconButton} aria-label={t.moveTaskToTrash.replace("{title}", child.title)} onClick={() => { void act(() => deleteTask(child.id)); }}>×</button>
+            </div>
+          </li>)}</ul>}
+        </div>}
+      </li>
+    );
+  };
 
   const statusText = ({
     idle: t.synced,
@@ -422,6 +505,9 @@ export default function App() {
   const weekdayFormatter = new Intl.DateTimeFormat(locale, { weekday: "short", timeZone: "UTC" });
   const weekdays = Array.from({ length: 7 }, (_, index) =>
     weekdayFormatter.format(new Date(Date.UTC(2024, 0, 7 + ((weekStart + index) % 7)))),
+  );
+  const recurrenceWeekdays = Array.from({ length: 7 }, (_, index) =>
+    weekdayFormatter.format(new Date(Date.UTC(2024, 0, 1 + index))),
   );
   const calendarTitle = calendarMode === "month"
     ? new Intl.DateTimeFormat(locale, { year: "numeric", month: "long", timeZone: "UTC" }).format(new Date(`${monthDays}-01T12:00:00Z`))
@@ -572,9 +658,32 @@ export default function App() {
             </div>
           </form>
         )}
+        <div className={styles.projectHeader}>
+          <h2>{t.tags}</h2>
+          <button type="button" className={styles.iconButton} aria-label={t.newTag} onClick={() => setNewTagOpen(!newTagOpen)}>＋</button>
+        </div>
+        <nav aria-label={t.tags} className={styles.projectNavigation}>
+          {activeTags.map((tag) => (
+            <button key={tag.id} type="button" className={`${styles.navItem} ${typeof view !== "string" && "tagId" in view && view.tagId === tag.id ? styles.active : ""}`} aria-current={typeof view !== "string" && "tagId" in view && view.tagId === tag.id ? "page" : undefined} onClick={() => selectView({ tagId: tag.id })}>
+              <span className={styles.navIcon} aria-hidden="true">#</span><span className={styles.projectLinkName}>{tag.name}</span>
+            </button>
+          ))}
+        </nav>
+        {newTagOpen && <form className={styles.newProjectForm} onSubmit={(event) => {
+          event.preventDefault();
+          const name = String(new FormData(event.currentTarget).get("name") ?? "");
+          void act(async () => { await createTag(name); setNewTagOpen(false); });
+        }}>
+          <label htmlFor="new-tag-name">{t.tagName}</label>
+          <input id="new-tag-name" name="name" maxLength={MAX_TITLE_LENGTH} required autoFocus />
+          <div className={styles.formActions}>
+            <button type="button" className={styles.textButton} onClick={() => setNewTagOpen(false)}>{t.cancel}</button>
+            <button type="submit" className={styles.smallPrimary}>{t.newTag}</button>
+          </div>
+        </form>}
         <div className={styles.sidebarFooter}>
           <button type="button" className={`${styles.navItem} ${view === "trash" ? styles.active : ""}`} aria-current={view === "trash" ? "page" : undefined} onClick={() => selectView("trash")}>
-            <span className={styles.navIcon} aria-hidden="true">⌫</span>{t.trash}<span className={styles.navCount}>{trashedTasks.length + projects.filter(({ deleted_at }) => deleted_at !== null).length || ""}</span>
+            <span className={styles.navIcon} aria-hidden="true">⌫</span>{t.trash}<span className={styles.navCount}>{trashedTasks.length + projects.filter(({ deleted_at }) => deleted_at !== null).length + trashedTags.length || ""}</span>
           </button>
           <div className={styles.syncStatus}>
             <span className={`${styles.statusDot} ${styles[`status${status}`]}`} aria-hidden="true" />
@@ -586,7 +695,7 @@ export default function App() {
 
       <main className={styles.main} inert={isMobile && sidebarOpen}>
         <div className={styles.topbar}>
-          <div className={styles.breadcrumb}>{t.appName}<span aria-hidden="true">/</span>{taskHeading(view, projects, t)}</div>
+          <div className={styles.breadcrumb}>{t.appName}<span aria-hidden="true">/</span>{taskHeading(view, projects, tags, t)}</div>
           <div className={styles.topbarActions}>
             {status === "reauth" ? <button type="button" className={styles.smallPrimary} onClick={() => window.location.reload()}>{t.login}</button> : null}
             {(status === "error" || status === "offline") && <button type="button" className={styles.textButton} onClick={() => { void syncNow(db, fetch, setStatus).then(refresh).catch(() => {}); }}>{t.retry}</button>}
@@ -602,8 +711,8 @@ export default function App() {
           <div className={styles.contentHeader}>
             <div>
               <p className={styles.eyebrow}>{view === "trash" ? t.deletedItems : t.workspace}</p>
-              <h1 id="view-title">{taskHeading(view, projects, t)}</h1>
-              {view !== "settings" && <p className={styles.subtitle}>{view === "trash" ? t.trashRetention : taskCountText(view === "calendar" ? selectedDayTasks.length : regularTasks.length)}</p>}
+              <h1 id="view-title">{taskHeading(view, projects, tags, t)}</h1>
+              {view !== "settings" && <p className={styles.subtitle}>{view === "trash" ? t.trashRetention : taskCountText(view === "calendar" ? selectedDayTasks.length : visibleTasks.length)}</p>}
             </div>
             {view !== "trash" && view !== "settings" && (
               <div className={styles.listControls}>
@@ -617,7 +726,7 @@ export default function App() {
             )}
           </div>
 
-          {typeof view !== "string" && selectedProject?.deleted_at === null && (
+          {typeof view !== "string" && "projectId" in view && selectedProject?.deleted_at === null && (
             <div className={styles.projectTools}>
               <span>{selectedProject.parent_id ? `↳ ${projects.find(({ id }) => id === selectedProject.parent_id)?.name ?? ""}` : t.projects}</span>
               <button type="button" className={styles.textButton} onClick={() => setEditingProjectId(selectedProject.id)}>{t.editProject}</button>
@@ -646,6 +755,15 @@ export default function App() {
                   </li>
                 );
               })}</ul></section>}
+              {trashedTags.length > 0 && <section aria-labelledby="trash-tags"><h2 id="trash-tags" className={styles.sectionTitle}>{t.tags}</h2><ul className={styles.taskList}>{trashedTags.map((tag) => (
+                <li key={tag.id} className={styles.taskRow}>
+                  <div className={styles.taskMain}><span className={styles.trashIcon} aria-hidden="true">#</span><span className={styles.taskTitle}>{tag.name}</span></div>
+                  <div className={styles.taskMeta}>
+                    <button type="button" className={styles.textButton} onClick={() => { void act(() => updateTag(tag.id, { deleted_at: null })); }}>{t.restore}</button>
+                    <button type="button" className={styles.dangerButton} onClick={() => { if (window.confirm(t.confirmPurge)) void act(() => purgeTrash("tag", tag.id)); }}>{t.purge}</button>
+                  </div>
+                </li>
+              ))}</ul></section>}
               {trashedTasks.length > 0 && <section aria-labelledby="trash-tasks"><h2 id="trash-tasks" className={styles.sectionTitle}>{t.tasks}</h2><ul className={styles.taskList}>{trashedTasks.map((task) => {
                 const trashedProject = task.project_id === null ? null : projects.find((project) => project.id === task.project_id && project.deleted_at !== null);
                 return <li key={task.id} className={styles.taskRow}>
@@ -653,7 +771,7 @@ export default function App() {
                   <div className={styles.taskMeta}><button type="button" className={styles.textButton} disabled={Boolean(trashedProject)} onClick={() => { void act(() => restoreTask(task.id)); }}>{t.restore}</button><button type="button" className={styles.dangerButton} onClick={() => { if (window.confirm(t.confirmPurge)) void act(() => purgeTrash("task", task.id)); }}>{t.purge}</button></div>
                 </li>;
               })}</ul></section>}
-              {trashedProjects.length === 0 && trashedTasks.length === 0 && <div className={styles.emptyState}><span className={styles.emptyIcon} aria-hidden="true">⌫</span><h2>{t.emptyTrash}</h2><p>{t.trashRetention}</p></div>}
+              {trashedProjects.length === 0 && trashedTasks.length === 0 && trashedTags.length === 0 && <div className={styles.emptyState}><span className={styles.emptyIcon} aria-hidden="true">⌫</span><h2>{t.emptyTrash}</h2><p>{t.trashRetention}</p></div>}
             </div>
           ) : view === "calendar" ? (
             <div className={styles.calendarPanel}>
@@ -693,12 +811,26 @@ export default function App() {
               <section className={styles.calendarTasks} aria-labelledby="selected-day-tasks">
                 <h2 id="selected-day-tasks">{t.selectedDayTasks}: <time dateTime={focusedCalendarDate}>{fullDateFormatter.format(new Date(`${focusedCalendarDate}T12:00:00Z`))}</time></h2>
                 {selectedDayTasks.length > 0
-                  ? <ul className={styles.taskList} aria-label={t.selectedDayTasks}>{selectedDayTasks.map(renderRegularTask)}</ul>
+                  ? <ul className={styles.taskList} aria-label={t.selectedDayTasks}>{selectedDayTasks.map((task) => renderRegularTask(task, false))}</ul>
                   : <p className={styles.mutedSmall}>{t.noTasksOnDate}</p>}
               </section>
             </div>
           ) : view === "settings" ? (
             <div className={styles.settingsPanel}>
+              <h2 className={styles.sectionTitle}>{t.manageTags}</h2>
+              {activeTags.map((tag) => <form key={tag.id} className={styles.tagManagerRow} onSubmit={(event) => {
+                event.preventDefault();
+                const name = String(new FormData(event.currentTarget).get("name") ?? "");
+                void act(() => updateTag(tag.id, { name }));
+              }}>
+                <label className={styles.srOnly} htmlFor={`tag-name-${tag.id}`}>{t.tagName}</label>
+                <input id={`tag-name-${tag.id}`} name="name" defaultValue={tag.name} maxLength={MAX_TITLE_LENGTH} required />
+                <button type="submit" className={styles.textButton}>{t.save}</button>
+                <button type="button" className={styles.dangerButton} onClick={() => { void act(async () => {
+                  await updateTag(tag.id, { deleted_at: new Date().toISOString() });
+                }); }}>{t.delete}</button>
+              </form>)}
+              {activeTags.length === 0 && <p className={styles.mutedSmall}>{t.emptyTags}</p>}
               <label htmlFor="settings-timezone">{t.timezone}</label>
               <select id="settings-timezone" value={timezone} onChange={(event) => { void act(() => updateSettings({ timezone: event.target.value })); }}>
                 {timezoneValues.map((value) => <option key={value} value={value}>{value}</option>)}
@@ -729,10 +861,10 @@ export default function App() {
             </div>
           ) : (
             <>
-              <ul className={styles.taskList} aria-label={taskHeading(view, projects, t)}>
-                {regularTasks.map(renderRegularTask)}
+              <ul className={styles.taskList} aria-label={taskHeading(view, projects, tags, t)}>
+                {regularTasks.map((task) => renderRegularTask(task))}
               </ul>
-              {regularTasks.length === 0 && <div className={styles.emptyState}><span className={styles.emptyIcon} aria-hidden="true">✓</span><h2>{t.noTasks}</h2><p>{t.emptyTasksHelp}</p></div>}
+              {visibleTasks.length === 0 && <div className={styles.emptyState}><span className={styles.emptyIcon} aria-hidden="true">✓</span><h2>{t.noTasks}</h2><p>{t.emptyTasksHelp}</p></div>}
             </>
           )}
 
@@ -745,7 +877,10 @@ export default function App() {
                   <input id="edit-task-title" name="title" defaultValue={editingTask.title} maxLength={MAX_TITLE_LENGTH} required autoFocus />
                   <label className={styles.checkboxField}><input name="done" type="checkbox" defaultChecked={editingTask.done} />{t.done}</label>
                   <div className={styles.fieldGrid}>
-                    <div><label htmlFor="edit-task-date">{t.dueDate}</label><input id="edit-task-date" name="due_date" type="date" defaultValue={editingTask.due_date ?? ""} /></div>
+                    <div><label htmlFor="edit-task-date">{t.dueDate}</label><input id="edit-task-date" name="due_date" type="date" value={editingDueDate} onChange={(event) => {
+                      setEditingDueDate(event.target.value);
+                      if (!event.target.value) setRecurrenceFrequency("none");
+                    }} /></div>
                     <div><label htmlFor="edit-task-time">{t.dueTime}</label><input id="edit-task-time" name="due_time" type="time" defaultValue={editingTask.due_time ?? ""} /></div>
                   </div>
                   <label htmlFor="edit-task-note">{t.note}</label><textarea id="edit-task-note" name="note" defaultValue={editingTask.note} maxLength={MAX_NOTE_LENGTH} rows={4} />
@@ -758,6 +893,48 @@ export default function App() {
                     <option value="">{t.noProject}</option>
                     {activeProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
                   </select>
+                  <fieldset className={styles.tagChoices}>
+                    <legend>{t.tags}</legend>
+                    {activeTags.map((tag) => <label key={tag.id} className={styles.checkboxField}>
+                      <input type="checkbox" name="tag_ids" value={tag.id} defaultChecked={editingTags.includes(tag.id)} />{tag.name}
+                    </label>)}
+                    {activeTags.length === 0 && <span className={styles.mutedSmall}>{t.emptyTags}</span>}
+                  </fieldset>
+                  <label htmlFor="edit-task-recurrence">{t.recurrence}</label>
+                  <select id="edit-task-recurrence" name="recurrence" value={recurrenceFrequency} disabled={!editingDueDate} onChange={(event) => setRecurrenceFrequency(event.target.value)}>
+                    <option value="none">{t.noRecurrence}</option>
+                    <option value="daily">{t.daily}</option>
+                    <option value="weekly">{t.weekly}</option>
+                    <option value="monthly">{t.monthly}</option>
+                    <option value="yearly">{t.yearly}</option>
+                  </select>
+                  {!editingDueDate && <p className={styles.mutedSmall} role="status">{t.recurrenceRequiresDueDate}</p>}
+                  {recurrenceFrequency === "weekly" && <fieldset className={styles.tagChoices}>
+                    <legend>{t.recurrenceWeekdays}</legend>
+                    {recurrenceWeekdays.map((label, index) => <label key={index} className={styles.checkboxField}>
+                      <input type="checkbox" name="weekdays" value={index + 1} defaultChecked={editingTask.recurrence?.frequency === "weekly" && editingTask.recurrence.weekdays.includes(index + 1)} />{label}
+                    </label>)}
+                  </fieldset>}
+                  {recurrenceFrequency === "monthly" && <div className={styles.fieldGrid}>
+                    <div><label htmlFor="edit-task-monthly-day">{t.monthly} · {t.recurrenceDay}</label><input id="edit-task-monthly-day" name="monthly_day" type="number" min="1" max="31" defaultValue={editingTask.recurrence?.frequency === "monthly" ? editingTask.recurrence.day : Number(editingTask.due_date?.slice(8) ?? 1)} /></div>
+                  </div>}
+                  {editingTask.parent_task_id === null && <section className={styles.subtaskEditor} aria-label={t.subtasks}>
+                    <h3>{t.subtasks}</h3>
+                    {tasks.filter((child) => child.parent_task_id === editingTask.id && child.deleted_at === null).map((child) => <div key={child.id} className={styles.subtaskRow}>
+                      <label className={styles.taskMain}><input type="checkbox" checked={child.done} aria-label={`${child.done ? t.reopenTask : t.completeTask}${t.labelSeparator}${child.title}`} onChange={(event) => { void act(() => updateTask(child.id, { done: event.target.checked })); }} /><span className={`${styles.taskTitle} ${child.done ? styles.done : ""}`}>{child.title}</span></label>
+                      <button type="button" className={styles.textButton} onClick={() => openTaskEditor(child)}>{t.edit}</button>
+                    </div>)}
+                    <div className={styles.subtaskAdd}>
+                      <label className={styles.srOnly} htmlFor="new-subtask-title">{t.taskTitle}</label>
+                      <input id="new-subtask-title" name="new_subtask" maxLength={MAX_TITLE_LENGTH} placeholder={t.taskTitle} />
+                      <button type="button" className={styles.smallPrimary} onClick={(event) => {
+                        const input = event.currentTarget.form?.elements.namedItem("new_subtask") as HTMLInputElement | null;
+                        if (!input?.value.trim()) return;
+                        const title = input.value;
+                        void act(async () => { await createTask(title, editingTask.project_id, db, editingTask.id); input.value = ""; });
+                      }}>{t.addSubtask}</button>
+                    </div>
+                  </section>}
                   <div className={styles.formActions}><button type="button" className={styles.textButton} onClick={() => setEditingTaskId(null)}>{t.cancel}</button><button type="submit" className={styles.primaryButton}>{t.save}</button></div>
                 </form>
               </section>

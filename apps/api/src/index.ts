@@ -76,20 +76,24 @@ app.post("/api/sync", async (c) => {
 app.get("/api/export", async (c) => {
   try {
     const userId = c.get("user").id;
-    const [taskRows, projectRows, settingsRows] = await c.env.DB.batch([
+    const [taskRows, projectRows, tagRows, taskTagRows, settingsRows] = await c.env.DB.batch([
       c.env.DB.prepare(
-        `SELECT id, project_id, title, note, done, due_date, due_time, priority, created_at, deleted_at, deleted_batch_id
+        `SELECT id, project_id, parent_task_id, recurrence, title, note, done, due_date, due_time, priority, created_at, deleted_at, deleted_batch_id
          FROM tasks WHERE user_id = ? ORDER BY created_at, id`,
       ).bind(userId),
       c.env.DB.prepare(
         `SELECT id, parent_id, name, deleted_at, deleted_batch_id
          FROM projects WHERE user_id = ? ORDER BY name, id`,
       ).bind(userId),
+      c.env.DB.prepare("SELECT id, name, deleted_at FROM tags WHERE user_id = ? ORDER BY name, id").bind(userId),
+      c.env.DB.prepare("SELECT id, task_id, tag_id, active FROM task_tags WHERE user_id = ? ORDER BY task_id, tag_id").bind(userId),
       c.env.DB.prepare("SELECT timezone, locale, digest_time FROM users WHERE id = ?").bind(userId),
     ]);
     const tasks = taskRows.results as Array<{
       id: string;
       project_id: string | null;
+      parent_task_id: string | null;
+      recurrence: string | null;
       title: string;
       note: string;
       done: number;
@@ -107,6 +111,8 @@ app.get("/api/export", async (c) => {
       deleted_at: string | null;
       deleted_batch_id: string | null;
     }>;
+    const tags = tagRows.results as Array<{ id: string; name: string; deleted_at: string | null }>;
+    const taskTags = taskTagRows.results as Array<{ id: string; task_id: string; tag_id: string; active: number }>;
     const settings = settingsRows.results[0] as {
       timezone: string;
       locale: "ja" | "en";
@@ -115,9 +121,15 @@ app.get("/api/export", async (c) => {
     if (!settings) throw new Error("Authenticated user settings missing from database");
     return c.json({
       format: "task-export",
-      version: 1,
-      tasks: tasks.map(({ done, ...task }) => ({ ...task, done: done === 1 })),
+      version: 2,
+      tasks: tasks.map(({ done, recurrence, ...task }) => ({
+        ...task,
+        done: done === 1,
+        recurrence: recurrence === null ? null : JSON.parse(recurrence),
+      })),
       projects,
+      tags,
+      task_tags: taskTags.map(({ active, ...taskTag }) => ({ ...taskTag, active: active === 1 })),
       settings,
     }, 200, {
       "Content-Disposition": `attachment; filename="task-export-${new Date().toISOString().slice(0, 10)}.json"`,

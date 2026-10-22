@@ -6,6 +6,13 @@ describe("i18n", () => {
     expect(Object.keys(dictionaries.en).sort()).toEqual(Object.keys(ja).sort());
   });
 
+  it("provides localized guidance for recurrence requirements", () => {
+    expect(ja.weeklyRecurrenceRequiresWeekday).toContain("曜日を1つ以上選択");
+    expect(en.weeklyRecurrenceRequiresWeekday).toBe("Select at least one weekday for weekly recurrence.");
+    expect(ja.recurrenceRequiresDueDate).toContain("期限日が必要");
+    expect(en.recurrenceRequiresDueDate).toBe("A due date is required to set a recurrence.");
+  });
+
   it("includes the unsent change count in the clear-data warning", () => {
     expect(clearDeviceDataConfirmation(ja, 3)).toContain("3 件");
     expect(clearDeviceDataConfirmation(ja, 3)).toContain("未送信");
