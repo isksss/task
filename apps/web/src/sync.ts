@@ -36,7 +36,7 @@ function toSyncChange(change: OutboxChange): SyncChange {
   } as SyncChange;
 }
 
-async function fetchJson<T>(fetcher: typeof fetch, path: string, init: RequestInit): Promise<T> {
+export async function fetchApiResponse(fetcher: typeof fetch, path: string, init: RequestInit = {}): Promise<Response> {
   const response = await fetcher(path, {
     ...init,
     credentials: "same-origin",
@@ -49,6 +49,11 @@ async function fetchJson<T>(fetcher: typeof fetch, path: string, init: RequestIn
   if (!response.headers.get("content-type")?.toLowerCase().includes("application/json")) {
     throw new ReauthenticationRequired();
   }
+  return response;
+}
+
+async function fetchJson<T>(fetcher: typeof fetch, path: string, init: RequestInit): Promise<T> {
+  const response = await fetchApiResponse(fetcher, path, init);
   if (!response.ok) throw new SyncHttpError(response.status);
   return response.json() as Promise<T>;
 }

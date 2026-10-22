@@ -28,9 +28,10 @@ import {
   updateSettings,
   updateTask,
 } from "./db";
+import { downloadExport, requestExportAfterSync } from "./export";
 import { clearDeviceDataConfirmation, dictionaries, getDefaultLocale, type Translation } from "./i18n";
 import { firstDayOfWeek, getMonthGridDates, getWeekDates, shiftCalendarDate, shiftCalendarMonth } from "./calendar";
-import { startSyncLoop, syncNow, syncSoon, waitForSync, type SyncStatus } from "./sync";
+import { ReauthenticationRequired, startSyncLoop, syncNow, syncSoon, waitForSync, type SyncStatus } from "./sync";
 import { disablePush, enablePush, pushAvailability, registerExistingPushSubscription } from "./push";
 import styles from "./App.module.css";
 
@@ -156,6 +157,8 @@ export default function App() {
   const [locale, setLocale] = useState<Locale>(getDefaultLocale());
   const [digestTime, setDigestTime] = useState("08:00");
   const [pushStatus, setPushStatus] = useState<PushStatus>("loading");
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+  const [exporting, setExporting] = useState(false);
   const [calendarDate, setCalendarDate] = useState<string | null>(null);
   const [calendarMode, setCalendarMode] = useState<CalendarMode>("month");
   const [view, setView] = useState<View>("all");
@@ -205,6 +208,16 @@ export default function App() {
     });
     return () => { active = false; };
   }, [ready]);
+
+  useEffect(() => {
+    const updateOnline = () => setIsOnline(navigator.onLine);
+    window.addEventListener("online", updateOnline);
+    window.addEventListener("offline", updateOnline);
+    return () => {
+      window.removeEventListener("online", updateOnline);
+      window.removeEventListener("offline", updateOnline);
+    };
+  }, []);
 
   useEffect(() => {
     const media = window.matchMedia("(max-width: 640px)");
@@ -468,6 +481,21 @@ export default function App() {
     working: t.pushWorking,
   })[pushStatus];
 
+  const exportData = async () => {
+    setExporting(true);
+    setError("");
+    try {
+      const response = await requestExportAfterSync(() => syncNow(db, fetch, setStatus), fetch);
+      await downloadExport(response);
+    } catch (cause) {
+      if (cause instanceof ReauthenticationRequired) setStatus("reauth");
+      else if (!navigator.onLine) setStatus("offline");
+      else setError(t.exportFailed);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const clearDeviceData = async () => {
     if (clearingDeviceDataRef.current) return;
     clearingDeviceDataRef.current = true;
@@ -691,6 +719,10 @@ export default function App() {
                 disabled={pushStatus === "loading" || pushStatus === "working" || pushStatus === "unsupported" || pushStatus === "install-on-ios" || pushStatus === "denied"}
                 onClick={() => { void togglePush(); }}
               >{pushStatus === "enabled" ? t.pushDisable : pushStatus === "retry" ? t.pushRetry : t.pushEnable}</button>
+              <div className={styles.formActions}>
+                <button type="button" className={styles.smallPrimary} disabled={!isOnline || exporting} onClick={() => { void exportData(); }}>{exporting ? t.exportingData : t.exportData}</button>
+                {!isOnline && <span className={styles.mutedSmall} role="status">{t.exportOffline}</span>}
+              </div>
               <div className={styles.formActions}>
                 <button type="button" className={styles.dangerButton} disabled={!ready} onClick={clearDeviceData}>{t.clearDeviceData}</button>
               </div>

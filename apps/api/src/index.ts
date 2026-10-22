@@ -73,6 +73,61 @@ app.post("/api/sync", async (c) => {
   }
 });
 
+app.get("/api/export", async (c) => {
+  try {
+    const userId = c.get("user").id;
+    const [taskRows, projectRows, settingsRows] = await c.env.DB.batch([
+      c.env.DB.prepare(
+        `SELECT id, project_id, title, note, done, due_date, due_time, priority, created_at, deleted_at, deleted_batch_id
+         FROM tasks WHERE user_id = ? ORDER BY created_at, id`,
+      ).bind(userId),
+      c.env.DB.prepare(
+        `SELECT id, parent_id, name, deleted_at, deleted_batch_id
+         FROM projects WHERE user_id = ? ORDER BY name, id`,
+      ).bind(userId),
+      c.env.DB.prepare("SELECT timezone, locale, digest_time FROM users WHERE id = ?").bind(userId),
+    ]);
+    const tasks = taskRows.results as Array<{
+      id: string;
+      project_id: string | null;
+      title: string;
+      note: string;
+      done: number;
+      due_date: string | null;
+      due_time: string | null;
+      priority: number;
+      created_at: string;
+      deleted_at: string | null;
+      deleted_batch_id: string | null;
+    }>;
+    const projects = projectRows.results as Array<{
+      id: string;
+      parent_id: string | null;
+      name: string;
+      deleted_at: string | null;
+      deleted_batch_id: string | null;
+    }>;
+    const settings = settingsRows.results[0] as {
+      timezone: string;
+      locale: "ja" | "en";
+      digest_time: string;
+    } | undefined;
+    if (!settings) throw new Error("Authenticated user settings missing from database");
+    return c.json({
+      format: "task-export",
+      version: 1,
+      tasks: tasks.map(({ done, ...task }) => ({ ...task, done: done === 1 })),
+      projects,
+      settings,
+    }, 200, {
+      "Content-Disposition": `attachment; filename="task-export-${new Date().toISOString().slice(0, 10)}.json"`,
+    });
+  } catch (error) {
+    console.error("Export failed", error);
+    return c.json({ error: "export_failed" }, 500);
+  }
+});
+
 app.post("/api/trash/purge", async (c) => {
   let body: unknown;
   try {
