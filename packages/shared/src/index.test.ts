@@ -55,6 +55,11 @@ describe("HLC", () => {
     expect(decodeHlc(encodeHlc(later))).toEqual(later);
   });
 
+  it("rejects non-ASCII device IDs", () => {
+    expect(() => encodeHlc(hlc(1, 0, "端末"))).toThrow(RangeError);
+    expect(() => nextHlc("端末")).toThrow(RangeError);
+  });
+
   it("clamps only clocks more than five minutes ahead to server time", () => {
     expect(clampFutureHlc(hlc(400_001, 2, "a"), 100_000)).toEqual(hlc(100_000, 2, "a"));
     expect(clampFutureHlc(hlc(400_000, 2, "a"), 100_000)).toEqual(hlc(400_000, 2, "a"));

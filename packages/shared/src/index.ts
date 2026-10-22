@@ -124,6 +124,8 @@ export const MAX_SYNC_CHANGES_PER_REQUEST = 100;
 
 const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
 const HLC_NUMBER_WIDTH = String(MAX_SAFE_INTEGER).length;
+// ASCII IDs make JavaScript string ordering match SQLite BINARY ordering.
+const DEVICE_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}(?![\s\S])/;
 
 function assertHlc(hlc: Hlc): void {
   if (
@@ -132,7 +134,7 @@ function assertHlc(hlc: Hlc): void {
     !Number.isSafeInteger(hlc.counter) ||
     hlc.counter < 0 ||
     typeof hlc.device_id !== "string" ||
-    hlc.device_id.length === 0
+    !DEVICE_ID_PATTERN.test(hlc.device_id)
   ) {
     throw new RangeError("Invalid HLC");
   }
@@ -152,7 +154,7 @@ export function nextHlc(
   received: Hlc | null = null,
 ): Hlc {
   assertTimestamp(now);
-  if (deviceId.length === 0) throw new RangeError("deviceId must not be empty");
+  if (!DEVICE_ID_PATTERN.test(deviceId)) throw new RangeError("Invalid HLC device_id");
   if (local) assertHlc(local);
   if (received) assertHlc(received);
 

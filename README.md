@@ -34,4 +34,4 @@ staging は `pnpm --filter @task/api deploy:staging`、production は `pnpm --fi
 pnpm --filter @task/api exec cf d1 migrations apply 00000000-0000-4000-8000-000000000000 --local --mode development
 ```
 
-`apps/api/src/config-environment.ts` のローカル D1 ID はローカル確認用プレースホルダです。staging / production の D1 ID は設定済みです。今回は空の初期 migration のみです。Cloudflare へのログイン、リモート D1 作成・変更、デプロイは行いません。
+`apps/api/src/config-environment.ts` のローカル D1 ID はローカル確認用プレースホルダです。staging / production の D1 ID は設定済みです。v1 schema は `0002_v1.sql` にあります。Cloudflare へのログイン、リモート D1 作成・変更、デプロイは行いません。

@@ -7,6 +7,13 @@ export interface Environment {
   domain?: string;
   databaseName: string;
   databaseId: string;
+  vars: {
+    DEPLOYMENT_ENV: string;
+    AUTH_MODE: string;
+    ACCESS_TEAM: string;
+    ACCESS_AUD: string;
+    ALLOWED_EMAILS: string;
+  };
 }
 
 export interface EnvironmentOptions {
@@ -23,7 +30,18 @@ export function environmentForMode(
     case undefined:
     case "development":
     case "test":
-      return { name: "task-api-local", databaseName: "task-db", databaseId: LOCAL_D1_ID };
+      return {
+        name: "task-api-local",
+        databaseName: "task-db",
+        databaseId: LOCAL_D1_ID,
+        vars: {
+          DEPLOYMENT_ENV: mode === "test" ? "test" : "development",
+          AUTH_MODE: mode === "test" ? "test" : "development",
+          ACCESS_TEAM: "isksss.cloudflareaccess.com",
+          ACCESS_AUD: "local-only",
+          ALLOWED_EMAILS: "isksss.prp@gmail.com",
+        },
+      };
     case "staging": {
       const databaseId = options.stagingD1Id ?? STAGING_D1_ID;
       if (databaseId.startsWith("TODO-")) {
@@ -36,6 +54,13 @@ export function environmentForMode(
         domain: "task-staging.isksss.dev",
         databaseName: "task-db-staging",
         databaseId,
+        vars: {
+          DEPLOYMENT_ENV: "staging",
+          AUTH_MODE: "access",
+          ACCESS_TEAM: "isksss.cloudflareaccess.com",
+          ACCESS_AUD: "d3d8d450e0d9d655e51c39abffca0080193e575f05a8398483352b1375c0a4a4",
+          ALLOWED_EMAILS: "isksss.prp@gmail.com",
+        },
       };
     }
     case "production": {
@@ -55,6 +80,13 @@ export function environmentForMode(
         domain: "task.isksss.dev",
         databaseName: "task-db",
         databaseId,
+        vars: {
+          DEPLOYMENT_ENV: "production",
+          AUTH_MODE: "access",
+          ACCESS_TEAM: "isksss.cloudflareaccess.com",
+          ACCESS_AUD: "2dbdca286bd34df54481d3ce4737e5ddf00c7da9d5c34c6b65b6ea7075e3d3cb",
+          ALLOWED_EMAILS: "isksss.prp@gmail.com",
+        },
       };
     }
     default:
