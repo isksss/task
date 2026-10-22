@@ -31,10 +31,12 @@ import {
 import { clearDeviceDataConfirmation, dictionaries, getDefaultLocale, type Translation } from "./i18n";
 import { firstDayOfWeek, getMonthGridDates, getWeekDates, shiftCalendarDate, shiftCalendarMonth } from "./calendar";
 import { startSyncLoop, syncNow, syncSoon, waitForSync, type SyncStatus } from "./sync";
+import { disablePush, enablePush, pushAvailability, registerExistingPushSubscription } from "./push";
 import styles from "./App.module.css";
 
 type View = "all" | "inbox" | "today" | "overdue" | "trash" | "calendar" | "settings" | { projectId: string };
 type CalendarMode = "month" | "week";
+type PushStatus = "loading" | "unsupported" | "install-on-ios" | "denied" | "disabled" | "enabled" | "retry" | "working";
 
 const SORT_KEY = "task.sort-by-view.v1";
 
@@ -153,6 +155,7 @@ export default function App() {
   const [timezone, setTimezone] = useState("Asia/Tokyo");
   const [locale, setLocale] = useState<Locale>(getDefaultLocale());
   const [digestTime, setDigestTime] = useState("08:00");
+  const [pushStatus, setPushStatus] = useState<PushStatus>("loading");
   const [calendarDate, setCalendarDate] = useState<string | null>(null);
   const [calendarMode, setCalendarMode] = useState<CalendarMode>("month");
   const [view, setView] = useState<View>("all");
@@ -183,6 +186,25 @@ export default function App() {
   useEffect(() => {
     document.documentElement.lang = locale;
   }, [locale]);
+
+  useEffect(() => {
+    if (!ready) return;
+    const availability = pushAvailability();
+    if (availability !== "available") {
+      setPushStatus(availability === "install-on-ios" ? "install-on-ios" : "unsupported");
+      return;
+    }
+    let active = true;
+    void registerExistingPushSubscription().then((registered) => {
+      if (!active) return;
+      setPushStatus(registered ? "enabled" : Notification.permission === "denied" ? "denied" : "disabled");
+    }).catch((cause: unknown) => {
+      if (!active) return;
+      setPushStatus("retry");
+      if (cause instanceof Error && cause.message === "reauthentication_required") setStatus("reauth");
+    });
+    return () => { active = false; };
+  }, [ready]);
 
   useEffect(() => {
     const media = window.matchMedia("(max-width: 640px)");
@@ -251,6 +273,14 @@ export default function App() {
       setError(cause instanceof RangeError ? t.invalidData : t.operationFailed);
     }
   }, [refresh, t]);
+
+  useEffect(() => {
+    const taskId = new URLSearchParams(window.location.search).get("task");
+    if (!ready || !taskId || !tasks.some((task) => task.id === taskId && task.deleted_at === null)) return;
+    setView("all");
+    setEditingTaskId(taskId);
+    window.history.replaceState(null, "", `${window.location.pathname}${window.location.hash}`);
+  }, [ready, tasks]);
 
   const selectedProjectId = typeof view === "string" ? null : view.projectId;
   const selectedProject = selectedProjectId === null ? null : projects.find(({ id }) => id === selectedProjectId) ?? null;
@@ -402,6 +432,42 @@ export default function App() {
       ? shiftCalendarMonth(focusedCalendarDate, direction)
       : shiftCalendarDate(focusedCalendarDate, direction * 7),
   );
+  const togglePush = async () => {
+    const wasEnabled = pushStatus === "enabled";
+    const wasRetrying = pushStatus === "retry";
+    setPushStatus("working");
+    try {
+      if (wasEnabled) {
+        await disablePush();
+        setPushStatus("disabled");
+      } else {
+        await enablePush();
+        setPushStatus("enabled");
+      }
+      setError("");
+    } catch (cause) {
+      if (cause instanceof Error && cause.message === "notification_permission_denied") {
+        setPushStatus("denied");
+      } else if (cause instanceof Error && cause.message === "reauthentication_required") {
+        setPushStatus(wasEnabled ? "enabled" : wasRetrying ? "retry" : "disabled");
+        setStatus("reauth");
+      } else {
+        setPushStatus(wasEnabled ? "enabled" : wasRetrying ? "retry" : "disabled");
+        setError(t.pushFailed);
+      }
+    }
+  };
+  const pushStatusText = ({
+    loading: t.loading,
+    unsupported: t.pushUnsupported,
+    "install-on-ios": t.pushInstallIOS,
+    denied: t.pushDenied,
+    disabled: t.pushDisabled,
+    enabled: t.pushEnabled,
+    retry: t.pushRegistrationFailed,
+    working: t.pushWorking,
+  })[pushStatus];
+
   const clearDeviceData = async () => {
     if (clearingDeviceDataRef.current) return;
     clearingDeviceDataRef.current = true;
@@ -616,6 +682,15 @@ export default function App() {
               </select>
               <label htmlFor="settings-digest-time">{t.digestTime}</label>
               <input id="settings-digest-time" type="time" value={digestTime} onChange={(event) => { void act(() => updateSettings({ digest_time: event.target.value })); }} />
+              <label htmlFor="settings-push-toggle">{t.pushNotifications}</label>
+              <p className={styles.mutedSmall} role="status">{pushStatusText}</p>
+              <button
+                id="settings-push-toggle"
+                type="button"
+                className={styles.smallPrimary}
+                disabled={pushStatus === "loading" || pushStatus === "working" || pushStatus === "unsupported" || pushStatus === "install-on-ios" || pushStatus === "denied"}
+                onClick={() => { void togglePush(); }}
+              >{pushStatus === "enabled" ? t.pushDisable : pushStatus === "retry" ? t.pushRetry : t.pushEnable}</button>
               <div className={styles.formActions}>
                 <button type="button" className={styles.dangerButton} disabled={!ready} onClick={clearDeviceData}>{t.clearDeviceData}</button>
               </div>

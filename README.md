@@ -35,3 +35,21 @@ pnpm --filter @task/api exec cf d1 migrations apply 00000000-0000-4000-8000-0000
 ```
 
 `apps/api/src/config-environment.ts` のローカル D1 ID はローカル確認用プレースホルダです。staging / production の D1 ID は設定済みです。v1 schema は `0002_v1.sql` にあります。Cloudflare へのログイン、リモート D1 作成・変更、デプロイは行いません。
+
+## Web Push
+
+開発・テストではローカル専用の固定鍵を使います。staging / production で通知を使う場合は、秘密鍵を生成して Worker secret `VAPID_PRIVATE_KEY` に設定してください。公開鍵は `GET /api/push/vapid-public-key` から取得されます。秘密鍵は JSON JWK 形式です。
+
+```sh
+umask 077
+node scripts/generate-vapid-key.mjs > .vapid-secrets.json
+```
+
+この `cf` CLI には secret の個別登録コマンドがなく、`cf deploy --help` によると `--secrets-file` でデプロイ時に設定できます。次のコマンドは Worker をデプロイするため、対象環境と変更内容を確認してから実行してください（このリポジトリの実装・検証作業では実行しません）。
+
+```sh
+pnpm --filter @task/api exec cf deploy --mode staging --secrets-file ../../.vapid-secrets.json
+# production の場合は --mode production を指定
+```
+
+`.vapid-secrets.json` は Git 管理対象外です。鍵の再生成・変更時は既存の Push 購読との互換性を保つため、鍵を失効させる影響を確認してください。staging / production で secret が未設定または不正な場合、Push 送信はスキップしてログに記録されます。

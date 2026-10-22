@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getPrecacheUrls, isNetworkOnlyPath, shouldUseAppShellFallback } from "./sw-routing";
+import { getPrecacheUrls, isNetworkOnlyPath, notificationTargetUrl, shouldUseAppShellFallback } from "./sw-routing";
 
 describe("service worker routing", () => {
   it("bypasses API and Cloudflare Access paths, but not similarly named paths", () => {
@@ -20,6 +20,13 @@ describe("service worker routing", () => {
       { url: "https://cdn.example/app.js" },
     ], "https://task.example/"))
       .toEqual(["https://task.example/index.html", "https://task.example/assets/app.js"]);
+  });
+
+  it("keeps notification clicks on the app and outside network-only routes", () => {
+    expect(notificationTargetUrl("/?task=abc", "https://task.example")).toBe("https://task.example/?task=abc");
+    expect(notificationTargetUrl("https://evil.example/", "https://task.example")).toBe("https://task.example/");
+    expect(notificationTargetUrl("/api/sync", "https://task.example")).toBe("https://task.example/");
+    expect(notificationTargetUrl("https://[", "https://task.example")).toBe("https://task.example/");
   });
 
   it("uses the app shell only when an app navigation has no network response", () => {

@@ -5,6 +5,7 @@ apps/api/public/
 .cloudflare/
 coverage/
 .dev.vars
+.vapid-secrets*
 .env
 .env.*
 !.env.example

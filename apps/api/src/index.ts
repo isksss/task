@@ -2,6 +2,13 @@ import { Hono } from "hono";
 import { authenticate, findOrCreateUser, type AuthBindings, type UserRow } from "./auth";
 import { ensureLocalSchema } from "./schema";
 import {
+  getVapidPublicKey,
+  parsePushEndpoint,
+  parsePushSubscription,
+  purgeNotificationLogs,
+  sendDuePushNotifications,
+} from "./push";
+import {
   handleSyncRequest,
   purgeExpiredData,
   purgeTrashEntity,
@@ -13,6 +20,7 @@ import {
 
 export interface Env extends AuthBindings {
   ASSETS: Fetcher;
+  VAPID_PRIVATE_KEY?: string;
 }
 
 type AppEnv = {
@@ -81,6 +89,55 @@ app.post("/api/trash/purge", async (c) => {
   }
 });
 
+app.get("/api/push/vapid-public-key", async (c) => {
+  const publicKey = await getVapidPublicKey(c.env);
+  return publicKey ? c.json({ publicKey }) : c.json({ error: "push_unavailable" }, 503);
+});
+
+app.post("/api/push/subscriptions", async (c) => {
+  let body: unknown;
+  try {
+    body = await requestBody(c.req.raw);
+  } catch (error) {
+    return c.json({ error: error instanceof RangeError ? "request_too_large" : "invalid_request" }, error instanceof RangeError ? 413 : 400);
+  }
+  const subscription = await parsePushSubscription(body);
+  if (!subscription) return c.json({ error: "invalid_request" }, 400);
+  try {
+    await c.env.DB.prepare(
+      `INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh, auth, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id,
+         p256dh = excluded.p256dh, auth = excluded.auth`,
+    ).bind(crypto.randomUUID(), c.get("user").id, subscription.endpoint, subscription.p256dh, subscription.auth, new Date().toISOString()).run();
+    return c.json({ ok: true });
+  } catch (error) {
+    console.error("Push subscription save failed", error);
+    return c.json({ error: "push_subscription_failed" }, 500);
+  }
+});
+
+app.delete("/api/push/subscriptions", async (c) => {
+  let body: unknown;
+  try {
+    body = await requestBody(c.req.raw);
+  } catch (error) {
+    return c.json({ error: error instanceof RangeError ? "request_too_large" : "invalid_request" }, error instanceof RangeError ? 413 : 400);
+  }
+  const endpoint = body !== null && typeof body === "object" && !Array.isArray(body)
+    ? parsePushEndpoint((body as Record<string, unknown>).endpoint)
+    : null;
+  if (!endpoint) return c.json({ error: "invalid_request" }, 400);
+  try {
+    await c.env.DB.prepare("DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint = ?")
+      .bind(c.get("user").id, endpoint).run();
+    return c.json({ ok: true });
+  } catch (error) {
+    console.error("Push subscription delete failed", error);
+    return c.json({ error: "push_subscription_failed" }, 500);
+  }
+});
+
 app.get("/api/settings", async (c) => {
   try {
     return c.json(await readUserSettings(c.env as SyncEnv, c.get("user")));
@@ -111,7 +168,11 @@ app.all("*", (c) => c.env.ASSETS.fetch(c.req.raw));
 
 export const scheduled: ExportedHandler<Env>["scheduled"] = async (event, env) => {
   console.log("Scheduled trigger", event.cron);
-  if (event.cron === "0 0 * * *") await purgeExpiredData(env);
+  if (event.cron === "* * * * *") await sendDuePushNotifications(env);
+  if (event.cron === "0 0 * * *") {
+    await purgeExpiredData(env);
+    await purgeNotificationLogs(env);
+  }
 };
 
 export default {
