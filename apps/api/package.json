@@ -11,6 +11,7 @@
     "test": "vitest run --mode test"
   },
   "dependencies": {
+    "@task/shared": "workspace:*",
     "hono": "^4.13.13"
   },
   "devDependencies": {
