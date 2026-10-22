@@ -15,6 +15,7 @@ const portTimeoutMs = 30_000;
 const migrationTimeoutMs = 30_000;
 const maxMigrationRetries = 3;
 const maxMigrationAttempts = maxMigrationRetries + 1;
+let persistenceDir;
 const controller = new AbortController();
 const timeout = setTimeout(
   () => controller.abort(new Error(`Smoke test exceeded ${timeoutMs}ms`)),
@@ -116,10 +117,14 @@ async function applyLocalMigrations(args, cwd, signal) {
       await runCommand(cfBin, args, cwd, AbortSignal.any([signal, attemptTimeout]));
       return;
     } catch (error) {
-      if (!attemptTimeout.aborted || signal.aborted) throw error;
+      if (error !== attemptTimeout.reason || signal.aborted) throw error;
       if (attempt > maxMigrationRetries) {
         throw new Error(`Local D1 migrations timed out after ${maxMigrationRetries} retries.`, { cause: error });
       }
+      const persistenceArg = args.indexOf("--persist-to");
+      await rm(persistenceDir, { recursive: true, force: true });
+      persistenceDir = await mkdtemp(join(tmpdir(), "task-smoke-"));
+      args[persistenceArg + 1] = persistenceDir;
       console.warn(`Local D1 migrations timed out on attempt ${attempt}; process group stopped, retrying.`);
     }
   }
@@ -180,7 +185,6 @@ async function waitForHttpReady(url, child, signal) {
   throw new Error(`cf dev did not become HTTP-ready within ${portTimeoutMs}ms`);
 }
 
-let persistenceDir;
 let server;
 let phase = "setup";
 try {
