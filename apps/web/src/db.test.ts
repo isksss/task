@@ -1,7 +1,8 @@
 import "fake-indexeddb/auto";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { compareHlc, HLC_FUTURE_TOLERANCE_MS, type Task } from "@task/shared";
 import {
+  clearLocalData,
   createProject,
   createTask,
   deleteProject,
@@ -13,7 +14,7 @@ import {
   updateSettings,
 } from "./db";
 import { getSince } from "./db";
-import { ReauthenticationRequired, syncNow } from "./sync";
+import { ReauthenticationRequired, syncNow, waitForSync } from "./sync";
 
 const opened: TaskDatabase[] = [];
 
@@ -75,6 +76,28 @@ describe("local database", () => {
     expect(queued[0]?.fields.created_at?.v).toBe(task.created_at);
     expect(compareHlc(queued[0]!.fields.title!.hlc, task.field_ts.title!)).toBe(0);
     expect(await database.tasks.get(task.id)).toEqual(task);
+  });
+
+  it("clears IndexedDB, browser storage, and caches before navigating to Access logout", async () => {
+    const database = await testDb();
+    await createTask("local task", null, database);
+    const storage = { clear: vi.fn() };
+    const cacheStorage = {
+      keys: vi.fn(async () => ["task-shell", "task-assets"]),
+      delete: vi.fn(async () => true),
+    };
+    const navigate = vi.fn();
+
+    await clearLocalData(database, storage, cacheStorage, navigate);
+
+    expect(storage.clear).toHaveBeenCalledOnce();
+    expect(cacheStorage.keys).toHaveBeenCalledOnce();
+    expect(cacheStorage.delete).toHaveBeenCalledTimes(2);
+    expect(navigate).toHaveBeenCalledOnce();
+    expect(navigate).toHaveBeenCalledWith("/cdn-cgi/access/logout");
+    const emptyDatabase = new TaskDatabase(database.name);
+    opened.push(emptyDatabase);
+    expect(await emptyDatabase.tasks.count()).toBe(0);
   });
 
   it("stores and validates synchronized user settings", async () => {
@@ -279,6 +302,33 @@ describe("sync loop", () => {
     expect(call).toBe(2);
     expect(await getSince(database)).toBe(2);
     expect(await database.outbox.count()).toBe(0);
+  });
+
+  it("waits for the active sync without scheduling another sync", async () => {
+    const database = await testDb();
+    await createTask("waiting task", null, database);
+    let release!: (response: Response) => void;
+    let started!: () => void;
+    const startedSync = new Promise<void>((resolve) => { started = resolve; });
+    const pendingResponse = new Promise<Response>((resolve) => { release = resolve; });
+    let calls = 0;
+    const fetcher = (async () => {
+      calls += 1;
+      started();
+      return pendingResponse;
+    }) as typeof fetch;
+
+    const activeSync = syncNow(database, fetcher);
+    await startedSync;
+    let finishedWaiting = false;
+    const waiting = waitForSync(database).then(() => { finishedWaiting = true; });
+    await Promise.resolve();
+    expect(finishedWaiting).toBe(false);
+    release(jsonResponse({ upto: 1, rows: [], tombstones: [], rejected: [] }));
+    await Promise.all([activeSync, waiting]);
+
+    expect(finishedWaiting).toBe(true);
+    expect(calls).toBe(1);
   });
 
   it("pushes unsent changes before clearing and installing a full server snapshot", async () => {

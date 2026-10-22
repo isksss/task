@@ -1,4 +1,5 @@
 import Dexie, { type Table } from "dexie";
+import { getDefaultLocale } from "./i18n";
 import {
   MAX_NOTE_LENGTH,
   MAX_PROJECT_DEPTH,
@@ -70,7 +71,7 @@ export const db = new TaskDatabase();
 const SETTINGS_ID = "settings" as const;
 const DEFAULT_SETTINGS: UserSettings = {
   timezone: "Asia/Tokyo",
-  locale: typeof navigator !== "undefined" && navigator.language.toLowerCase().startsWith("en") ? "en" : "ja",
+  locale: getDefaultLocale(),
   digest_time: "08:00",
 };
 
@@ -658,4 +659,23 @@ export async function setSince(value: number, database = db): Promise<void> {
 
 export async function getSettings(database = db): Promise<SettingsRecord> {
   return (await database.settings.get(SETTINGS_ID)) ?? settingsDefaults();
+}
+
+export async function clearLocalData(
+  database = db,
+  storage: Pick<Storage, "clear"> = localStorage,
+  cacheStorage: Pick<CacheStorage, "keys" | "delete"> | undefined = typeof caches === "undefined" ? undefined : caches,
+  navigate: (path: string) => void = (path) => {
+    if (import.meta.env.DEV) window.location.reload();
+    else window.location.assign(path);
+  },
+): Promise<void> {
+  database.close();
+  await database.delete();
+  storage.clear();
+  if (cacheStorage) {
+    await Promise.all((await cacheStorage.keys()).map((name) => cacheStorage.delete(name)));
+  }
+  // /cdn-cgi/ must bypass future service-worker caches so Access can end its session.
+  navigate("/cdn-cgi/access/logout");
 }

@@ -337,6 +337,154 @@
   font-size: 0.78rem;
 }
 
+.calendarPanel {
+  display: grid;
+  gap: 22px;
+}
+
+.calendarToolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.calendarToolbar h2 {
+  flex: 1;
+  margin: 0;
+  text-align: center;
+  font-size: 1rem;
+}
+
+.calendarModes {
+  display: flex;
+  gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.calendarModes button,
+.calendarModeActive {
+  border: 0;
+  border-radius: 5px;
+  padding: 6px 10px;
+  color: var(--text-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.calendarModes .calendarModeActive {
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  font-weight: 650;
+}
+
+.calendarTable {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.calendarTable th {
+  padding: 9px 3px;
+  color: var(--text-faint);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.calendarTable td {
+  height: 78px;
+  border: 1px solid var(--border);
+  padding: 2px;
+  vertical-align: top;
+}
+
+.calendarDay {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 70px;
+  align-items: flex-start;
+  justify-content: space-between;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  padding: 7px;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.calendarDay:hover {
+  background: var(--hover);
+}
+
+.calendarDay.calendarSelected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.calendarDay.calendarOutside {
+  color: var(--text-faint);
+}
+
+.calendarCount {
+  display: grid;
+  min-width: 21px;
+  height: 21px;
+  place-items: center;
+  border-radius: 11px;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.calendarTasks {
+  display: grid;
+  gap: 10px;
+}
+
+.calendarTasks h2 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.settingsPanel {
+  display: grid;
+  width: min(100%, 560px);
+  gap: 9px;
+}
+
+.settingsPanel label {
+  margin-top: 9px;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.settingsPanel select,
+.settingsPanel input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  padding: 8px 10px;
+  color: var(--text);
+  background: var(--surface);
+}
+
+.settingsPanel .formActions {
+  justify-content: flex-start;
+  margin-top: 18px;
+}
+
 .projectTools {
   display: flex;
   align-items: center;
@@ -764,6 +912,11 @@ button:disabled {
   .projectTools { flex-wrap: wrap; gap: 5px; }
   .projectTools span { flex-basis: 100%; margin-bottom: 4px; }
   .fieldGrid { grid-template-columns: 1fr; gap: 0; }
+  .calendarToolbar { flex-wrap: wrap; }
+  .calendarToolbar h2 { order: -1; flex-basis: 100%; }
+  .calendarTable td { height: 58px; padding: 1px; }
+  .calendarDay { min-height: 54px; padding: 4px; }
+  .calendarCount { min-width: 18px; height: 18px; }
   .reauthBanner, .offlineBanner, .errorBanner { align-items: flex-start; flex-direction: column; padding: 12px 17px; }
 }
 

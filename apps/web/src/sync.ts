@@ -208,6 +208,10 @@ export function syncNow(
   return operation;
 }
 
+export function waitForSync(database = db): Promise<void> {
+  return locks.get(database) ?? Promise.resolve();
+}
+
 export function syncSoon(database = db, onStatus?: (status: SyncStatus) => void): void {
   const previous = debounceTimers.get(database);
   if (previous) clearTimeout(previous);

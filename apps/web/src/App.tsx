@@ -5,6 +5,8 @@ import {
   isTaskOverdue,
   MAX_NOTE_LENGTH,
   MAX_TITLE_LENGTH,
+  todayInTimeZone,
+  type Locale,
   type Project,
   type Task,
   type TaskSort,
@@ -12,6 +14,7 @@ import {
 import {
   createProject,
   createTask,
+  clearLocalData,
   db,
   deleteProject,
   deleteTask,
@@ -21,21 +24,18 @@ import {
   restoreProject,
   restoreTask,
   updateProject,
+  updateSettings,
   updateTask,
 } from "./db";
-import { ja as t } from "./i18n";
-import { startSyncLoop, syncNow, syncSoon, type SyncStatus } from "./sync";
+import { clearDeviceDataConfirmation, dictionaries, getDefaultLocale, type Translation } from "./i18n";
+import { firstDayOfWeek, getMonthGridDates, getWeekDates, shiftCalendarDate, shiftCalendarMonth } from "./calendar";
+import { startSyncLoop, syncNow, syncSoon, waitForSync, type SyncStatus } from "./sync";
 import styles from "./App.module.css";
 
-type View = "all" | "inbox" | "today" | "overdue" | "trash" | { projectId: string };
+type View = "all" | "inbox" | "today" | "overdue" | "trash" | "calendar" | "settings" | { projectId: string };
+type CalendarMode = "month" | "week";
 
 const SORT_KEY = "task.sort-by-view.v1";
-const sortOptions: { value: TaskSort; label: string }[] = [
-  { value: "due", label: t.due },
-  { value: "priority", label: t.priority },
-  { value: "created", label: t.created },
-];
-const priorityLabels = [t.noPriority, t.low, t.medium, t.high];
 
 function viewKey(view: View): string {
   return typeof view === "string" ? view : `project:${view.projectId}`;
@@ -86,9 +86,19 @@ function trapDialogFocus(event: KeyboardEvent<HTMLElement>, close: () => void): 
   }
 }
 
-function taskHeading(view: View, projects: Project[]): string {
+function taskHeading(view: View, projects: Project[], t: Translation): string {
   if (typeof view !== "string") return projects.find(({ id }) => id === view.projectId)?.name ?? t.projects;
-  return ({ all: t.all, inbox: t.inbox, today: t.today, overdue: t.overdue, trash: t.trash })[view];
+  return ({ all: t.all, inbox: t.inbox, today: t.today, overdue: t.overdue, trash: t.trash, calendar: t.calendar, settings: t.settings })[view];
+}
+
+function formatTaskDue(task: Task, locale: Locale): string {
+  if (!task.due_date) return "";
+  const date = new Date(`${task.due_date}T12:00:00Z`);
+  const formattedDate = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: "UTC" }).format(date);
+  if (!task.due_time) return formattedDate;
+  const time = new Date(`${task.due_date}T${task.due_time}:00Z`);
+  const formattedTime = new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit", timeZone: "UTC" }).format(time);
+  return `${formattedDate} · ${formattedTime}`;
 }
 
 function descendants(projectId: string, projects: Project[]): Set<string> {
@@ -111,6 +121,7 @@ function renderProjectTree(
   projects: Project[],
   activeId: string | null,
   onSelect: (project: Project) => void,
+  t: Translation,
 ): ReactNode {
   const children = projects.filter((project) => project.parent_id === parentId && project.deleted_at === null);
   if (children.length === 0) return null;
@@ -127,7 +138,7 @@ function renderProjectTree(
             <span className={styles.projectDot} aria-hidden="true" />
             <span className={styles.projectLinkName}>{project.name || t.projects}</span>
           </button>
-          {renderProjectTree(project.id, projects, activeId, onSelect)}
+          {renderProjectTree(project.id, projects, activeId, onSelect, t)}
         </li>
       ))}
     </ul>
@@ -138,6 +149,10 @@ export default function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [timezone, setTimezone] = useState("Asia/Tokyo");
+  const [locale, setLocale] = useState<Locale>(getDefaultLocale());
+  const [digestTime, setDigestTime] = useState("08:00");
+  const [calendarDate, setCalendarDate] = useState<string | null>(null);
+  const [calendarMode, setCalendarMode] = useState<CalendarMode>("month");
   const [view, setView] = useState<View>("all");
   const [sorts, setSorts] = useState<Record<string, TaskSort>>(loadSorts);
   const [showCompleted, setShowCompleted] = useState(false);
@@ -150,9 +165,22 @@ export default function App() {
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const firstNavigationItemRef = useRef<HTMLButtonElement>(null);
   const previousSidebarOpen = useRef(false);
+  const stopSyncRef = useRef<(() => void) | undefined>(undefined);
+  const clearingDeviceDataRef = useRef(false);
   const [status, setStatus] = useState<SyncStatus>("syncing");
   const [error, setError] = useState("");
   const [ready, setReady] = useState(false);
+  const t = dictionaries[locale];
+  const sortOptions: { value: TaskSort; label: string }[] = [
+    { value: "due", label: t.due },
+    { value: "priority", label: t.priority },
+    { value: "created", label: t.created },
+  ];
+  const priorityLabels = [t.noPriority, t.low, t.medium, t.high];
+
+  useEffect(() => {
+    document.documentElement.lang = locale;
+  }, [locale]);
 
   useEffect(() => {
     const media = window.matchMedia("(max-width: 640px)");
@@ -189,6 +217,8 @@ export default function App() {
     setTasks(nextTasks);
     setProjects(nextProjects);
     setTimezone(settings.timezone);
+    setLocale(settings.locale);
+    setDigestTime(settings.digest_time);
   }, []);
 
   useEffect(() => {
@@ -198,12 +228,14 @@ export default function App() {
       if (!active) return;
       setReady(true);
       stop = startSyncLoop(setStatus, () => { void refresh(); });
+      stopSyncRef.current = stop;
     }).catch(() => {
-      setError(t.operationFailed);
+      setError(dictionaries[getDefaultLocale()].operationFailed);
     });
     return () => {
       active = false;
       stop?.();
+      if (stopSyncRef.current === stop) stopSyncRef.current = undefined;
     };
   }, [refresh]);
 
@@ -216,7 +248,7 @@ export default function App() {
     } catch (cause) {
       setError(cause instanceof RangeError ? t.invalidData : t.operationFailed);
     }
-  }, [refresh]);
+  }, [refresh, t]);
 
   const selectedProjectId = typeof view === "string" ? null : view.projectId;
   const selectedProject = selectedProjectId === null ? null : projects.find(({ id }) => id === selectedProjectId) ?? null;
@@ -232,6 +264,23 @@ export default function App() {
     if (typeof view !== "string") return task.project_id !== null && descendants(view.projectId, activeProjects).has(task.project_id);
     return view === "all";
   }).sort((a, b) => compareTasks(a, b, currentSort));
+  const activeCalendarTasks = tasks.filter((task) =>
+    task.deleted_at === null && task.due_date !== null && (showCompleted || !task.done),
+  );
+  const focusedCalendarDate = calendarDate ?? todayInTimeZone(new Date(), timezone);
+  const monthDays = focusedCalendarDate.slice(0, 7);
+  const weekStart = firstDayOfWeek(locale);
+  const calendarDates = calendarMode === "month"
+    ? getMonthGridDates(monthDays, weekStart)
+    : getWeekDates(focusedCalendarDate, weekStart);
+  const calendarCounts = new Map<string, number>();
+  for (const task of activeCalendarTasks) {
+    const date = task.due_date!;
+    calendarCounts.set(date, (calendarCounts.get(date) ?? 0) + 1);
+  }
+  const selectedDayTasks = activeCalendarTasks
+    .filter((task) => task.due_date === focusedCalendarDate)
+    .sort((a, b) => compareTasks(a, b, currentSort));
   const trashedTasks = tasks.filter(({ deleted_at }) => deleted_at !== null);
   const trashedProjects = projects.filter((project) => {
     if (project.deleted_at === null) return false;
@@ -308,10 +357,10 @@ export default function App() {
         <span className={`${styles.taskTitle} ${task.done ? styles.done : ""}`}>{task.title}</span>
       </label>
       <div className={styles.taskMeta}>
-        {task.due_date && <span className={styles.due}>{task.due_date}{task.due_time ? ` · ${task.due_time}` : ""}</span>}
+        {task.due_date && <span className={styles.due}>{formatTaskDue(task, locale)}</span>}
         {task.priority > 0 && <span className={`${styles.priority} ${styles[`priority${task.priority}`]}`}>{priorityLabels[task.priority]}</span>}
         <button type="button" className={styles.textButton} onClick={() => setEditingTaskId(task.id)}>{t.edit}</button>
-        <button type="button" className={styles.iconButton} aria-label={`「${task.title}」をゴミ箱へ移動`} onClick={() => { void act(() => deleteTask(task.id)); }}>×</button>
+        <button type="button" className={styles.iconButton} aria-label={t.moveTaskToTrash.replace("{title}", task.title)} onClick={() => { void act(() => deleteTask(task.id)); }}>×</button>
       </div>
     </li>
   );
@@ -323,6 +372,63 @@ export default function App() {
     reauth: t.reauth,
     error: t.syncError,
   })[status];
+  const fullDateFormatter = new Intl.DateTimeFormat(locale, { dateStyle: "full", timeZone: "UTC" });
+  const dayFormatter = new Intl.DateTimeFormat(locale, { day: "numeric", timeZone: "UTC" });
+  const weekdayFormatter = new Intl.DateTimeFormat(locale, { weekday: "short", timeZone: "UTC" });
+  const weekdays = Array.from({ length: 7 }, (_, index) =>
+    weekdayFormatter.format(new Date(Date.UTC(2024, 0, 7 + ((weekStart + index) % 7)))),
+  );
+  const calendarTitle = calendarMode === "month"
+    ? new Intl.DateTimeFormat(locale, { year: "numeric", month: "long", timeZone: "UTC" }).format(new Date(`${monthDays}-01T12:00:00Z`))
+    : `${fullDateFormatter.format(new Date(`${calendarDates[0]}T12:00:00Z`))} – ${fullDateFormatter.format(new Date(`${calendarDates[6]}T12:00:00Z`))}`;
+  const taskCountText = (count: number) =>
+    (locale === "en" && count === 1 ? t.taskCountOne : t.taskCount).replace("{count}", String(count));
+  const calendarDayLabel = (date: string, count: number) =>
+    (locale === "en" && count === 1 ? t.calendarDayLabelOne : t.calendarDayLabel)
+      .replace("{date}", fullDateFormatter.format(new Date(`${date}T12:00:00Z`)))
+      .replace("{count}", String(count));
+  const timezoneValues = useMemo(() => {
+    const intl = Intl as typeof Intl & { supportedValuesOf?: (key: "timeZone") => string[] };
+    try {
+      return [...new Set(["Asia/Tokyo", timezone, ...(intl.supportedValuesOf?.("timeZone") ?? ["UTC"])])].sort();
+    } catch {
+      return [...new Set(["Asia/Tokyo", timezone, "UTC"])].sort();
+    }
+  }, [timezone]);
+  const moveCalendar = (direction: -1 | 1) => setCalendarDate(
+    calendarMode === "month"
+      ? shiftCalendarMonth(focusedCalendarDate, direction)
+      : shiftCalendarDate(focusedCalendarDate, direction * 7),
+  );
+  const clearDeviceData = async () => {
+    if (clearingDeviceDataRef.current) return;
+    clearingDeviceDataRef.current = true;
+    if (navigator.onLine) await syncNow(db, fetch, setStatus).catch(() => {});
+    stopSyncRef.current?.();
+    stopSyncRef.current = undefined;
+    const resumeSync = () => {
+      stopSyncRef.current = startSyncLoop(setStatus, () => { void refresh(); });
+    };
+    await waitForSync(db).catch(() => {});
+    let pendingChanges: number;
+    try {
+      pendingChanges = await db.outbox.count();
+    } catch {
+      setError(t.operationFailed);
+      resumeSync();
+      clearingDeviceDataRef.current = false;
+      return;
+    }
+    if (!window.confirm(clearDeviceDataConfirmation(t, pendingChanges))) {
+      resumeSync();
+      clearingDeviceDataRef.current = false;
+      return;
+    }
+    void clearLocalData().catch(() => {
+      setError(t.operationFailed);
+      clearingDeviceDataRef.current = false;
+    });
+  };
 
   return (
     <div className={styles.appShell}>
@@ -335,10 +441,10 @@ export default function App() {
         <div className={styles.brand}><span className={styles.brandMark} aria-hidden="true">t</span><span>{t.appName}</span></div>
         <nav className={styles.primaryNav} aria-label={t.views}>
           {([
-            ["all", t.all], ["inbox", t.inbox], ["today", t.today], ["overdue", t.overdue],
+            ["all", t.all], ["inbox", t.inbox], ["today", t.today], ["overdue", t.overdue], ["calendar", t.calendar], ["settings", t.settings],
           ] as const).map(([key, label]) => (
             <button ref={key === "all" ? firstNavigationItemRef : undefined} key={key} type="button" className={`${styles.navItem} ${view === key ? styles.active : ""}`} aria-current={view === key ? "page" : undefined} onClick={() => selectView(key)}>
-              <span className={styles.navIcon} aria-hidden="true">{{ all: "◷", inbox: "▱", today: "◉", overdue: "◷" }[key]}</span>{label}
+              <span className={styles.navIcon} aria-hidden="true">{{ all: "◷", inbox: "▱", today: "◉", overdue: "◷", calendar: "▦", settings: "⚙" }[key]}</span>{label}
             </button>
           ))}
         </nav>
@@ -347,7 +453,7 @@ export default function App() {
           <button type="button" className={styles.iconButton} aria-label={t.newProject} onClick={() => setNewProjectOpen(!newProjectOpen)}>＋</button>
         </div>
         <nav aria-label={t.projects} className={styles.projectNavigation}>
-          {activeProjects.length ? renderProjectTree(null, activeProjects, selectedProjectId, (project) => selectView({ projectId: project.id })) : <p className={styles.mutedSmall}>{t.emptyProject}</p>}
+          {activeProjects.length ? renderProjectTree(null, activeProjects, selectedProjectId, (project) => selectView({ projectId: project.id }), t) : <p className={styles.mutedSmall}>{t.emptyProject}</p>}
         </nav>
         {newProjectOpen && (
           <form className={styles.newProjectForm} onSubmit={(event) => {
@@ -384,7 +490,7 @@ export default function App() {
 
       <main className={styles.main} inert={isMobile && sidebarOpen}>
         <div className={styles.topbar}>
-          <div className={styles.breadcrumb}>{t.appName}<span aria-hidden="true">/</span>{taskHeading(view, projects)}</div>
+          <div className={styles.breadcrumb}>{t.appName}<span aria-hidden="true">/</span>{taskHeading(view, projects, t)}</div>
           <div className={styles.topbarActions}>
             {status === "reauth" ? <button type="button" className={styles.smallPrimary} onClick={() => window.location.reload()}>{t.login}</button> : null}
             {(status === "error" || status === "offline") && <button type="button" className={styles.textButton} onClick={() => { void syncNow(db, fetch, setStatus).then(refresh).catch(() => {}); }}>{t.retry}</button>}
@@ -399,10 +505,10 @@ export default function App() {
           <div className={styles.contentHeader}>
             <div>
               <p className={styles.eyebrow}>{view === "trash" ? t.deletedItems : t.workspace}</p>
-              <h1 id="view-title">{taskHeading(view, projects)}</h1>
-              <p className={styles.subtitle}>{view === "trash" ? t.trashRetention : `${regularTasks.length}${t.taskCount}`}</p>
+              <h1 id="view-title">{taskHeading(view, projects, t)}</h1>
+              {view !== "settings" && <p className={styles.subtitle}>{view === "trash" ? t.trashRetention : taskCountText(view === "calendar" ? selectedDayTasks.length : regularTasks.length)}</p>}
             </div>
-            {view !== "trash" && (
+            {view !== "trash" && view !== "settings" && (
               <div className={styles.listControls}>
                 <label className={styles.completedToggle}><input type="checkbox" checked={showCompleted} onChange={(event) => setShowCompleted(event.target.checked)} />{t.completed}</label>
                 <label className={styles.sortControl}>{t.sort}
@@ -422,7 +528,7 @@ export default function App() {
             </div>
           )}
 
-          {view !== "trash" && (
+          {view !== "trash" && view !== "calendar" && view !== "settings" && (
             <form className={styles.quickAdd} onSubmit={submitQuickTask}>
               <span className={styles.addMark} aria-hidden="true">＋</span>
               <label className={styles.srOnly} htmlFor="quick-task-title">{t.taskTitle}</label>
@@ -452,9 +558,68 @@ export default function App() {
               })}</ul></section>}
               {trashedProjects.length === 0 && trashedTasks.length === 0 && <div className={styles.emptyState}><span className={styles.emptyIcon} aria-hidden="true">⌫</span><h2>{t.emptyTrash}</h2><p>{t.trashRetention}</p></div>}
             </div>
+          ) : view === "calendar" ? (
+            <div className={styles.calendarPanel}>
+              <div className={styles.calendarToolbar}>
+                <button type="button" className={styles.textButton} aria-label={t.previousPeriod} onClick={() => moveCalendar(-1)}>←</button>
+                <h2 aria-live="polite">{calendarTitle}</h2>
+                <button type="button" className={styles.textButton} aria-label={t.nextPeriod} onClick={() => moveCalendar(1)}>→</button>
+                <div className={styles.calendarModes}>
+                  <button type="button" className={calendarMode === "month" ? styles.calendarModeActive : styles.textButton} aria-pressed={calendarMode === "month"} onClick={() => setCalendarMode("month")}>{t.monthView}</button>
+                  <button type="button" className={calendarMode === "week" ? styles.calendarModeActive : styles.textButton} aria-pressed={calendarMode === "week"} onClick={() => setCalendarMode("week")}>{t.weekView}</button>
+                </div>
+              </div>
+              <table className={styles.calendarTable}>
+                <caption className={styles.srOnly}>{calendarTitle}</caption>
+                <thead><tr>{weekdays.map((weekday, index) => <th key={index} scope="col">{weekday}</th>)}</tr></thead>
+                <tbody>
+                  {Array.from({ length: calendarDates.length / 7 }, (_, row) => (
+                    <tr key={row}>{calendarDates.slice(row * 7, row * 7 + 7).map((date) => {
+                      const count = calendarCounts.get(date) ?? 0;
+                      const dateValue = new Date(`${date}T12:00:00Z`);
+                      return <td key={date}>
+                        <button
+                          type="button"
+                          className={`${styles.calendarDay} ${date.slice(0, 7) !== monthDays ? styles.calendarOutside : ""} ${date === focusedCalendarDate ? styles.calendarSelected : ""}`}
+                          aria-label={calendarDayLabel(date, count)}
+                          aria-pressed={date === focusedCalendarDate}
+                          onClick={() => setCalendarDate(date)}
+                        >
+                          <span>{dayFormatter.format(dateValue)}</span>
+                          {count > 0 && <span className={styles.calendarCount} aria-hidden="true">{count}</span>}
+                        </button>
+                      </td>;
+                    })}</tr>
+                  ))}
+                </tbody>
+              </table>
+              <section className={styles.calendarTasks} aria-labelledby="selected-day-tasks">
+                <h2 id="selected-day-tasks">{t.selectedDayTasks}: <time dateTime={focusedCalendarDate}>{fullDateFormatter.format(new Date(`${focusedCalendarDate}T12:00:00Z`))}</time></h2>
+                {selectedDayTasks.length > 0
+                  ? <ul className={styles.taskList} aria-label={t.selectedDayTasks}>{selectedDayTasks.map(renderRegularTask)}</ul>
+                  : <p className={styles.mutedSmall}>{t.noTasksOnDate}</p>}
+              </section>
+            </div>
+          ) : view === "settings" ? (
+            <div className={styles.settingsPanel}>
+              <label htmlFor="settings-timezone">{t.timezone}</label>
+              <select id="settings-timezone" value={timezone} onChange={(event) => { void act(() => updateSettings({ timezone: event.target.value })); }}>
+                {timezoneValues.map((value) => <option key={value} value={value}>{value}</option>)}
+              </select>
+              <label htmlFor="settings-locale">{t.language}</label>
+              <select id="settings-locale" value={locale} onChange={(event) => { void act(() => updateSettings({ locale: event.target.value as Locale })); }}>
+                <option value="ja">{t.japanese}</option>
+                <option value="en">{t.english}</option>
+              </select>
+              <label htmlFor="settings-digest-time">{t.digestTime}</label>
+              <input id="settings-digest-time" type="time" value={digestTime} onChange={(event) => { void act(() => updateSettings({ digest_time: event.target.value })); }} />
+              <div className={styles.formActions}>
+                <button type="button" className={styles.dangerButton} disabled={!ready} onClick={clearDeviceData}>{t.clearDeviceData}</button>
+              </div>
+            </div>
           ) : (
             <>
-              <ul className={styles.taskList} aria-label={taskHeading(view, projects)}>
+              <ul className={styles.taskList} aria-label={taskHeading(view, projects, t)}>
                 {regularTasks.map(renderRegularTask)}
               </ul>
               {regularTasks.length === 0 && <div className={styles.emptyState}><span className={styles.emptyIcon} aria-hidden="true">✓</span><h2>{t.noTasks}</h2><p>{t.emptyTasksHelp}</p></div>}
