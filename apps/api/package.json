@@ -3,12 +3,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "cf dev",
-    "build": "cf build",
+    "dev": "cf dev --mode development",
+    "build": "cf build --mode development",
     "deploy:staging": "cf deploy --mode staging",
-    "deploy:production": "cf deploy --mode production",
+    "deploy:production": "TASK_ALLOW_PRODUCTION_DEPLOY=1 cf deploy --mode production",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run --mode test"
   },
   "dependencies": {
     "hono": "^4.13.13"

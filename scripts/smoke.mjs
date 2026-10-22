@@ -192,22 +192,48 @@ async function waitForHttpReady(url, child, signal) {
 
 let persistenceDir;
 let server;
+let phase = "setup";
 try {
   persistenceDir = await mkdtemp(join(tmpdir(), "task-smoke-"));
+  phase = "web build";
   await runCommand("pnpm", ["--filter", "@task/web", "build"], root, controller.signal);
+  phase = "local D1 migrations";
   await runCommand(
     cfBin,
-    ["d1", "migrations", "apply", databaseId, "--local", "--dir", "migrations", "--persist-to", persistenceDir],
+    [
+      "d1",
+      "migrations",
+      "apply",
+      databaseId,
+      "--local",
+      "--dir",
+      "migrations",
+      "--persist-to",
+      persistenceDir,
+      "--mode",
+      "development",
+    ],
     apiDir,
     controller.signal,
   );
   console.log("Local D1 migrations applied.");
 
   const port = await getFreePort();
+  phase = "cf dev startup";
   console.log(`Starting cf dev on 127.0.0.1:${port}.`);
   server = spawn(
     cfBin,
-    ["dev", "--persist-to", persistenceDir, "--host", "127.0.0.1", "--port", String(port)],
+    [
+      "dev",
+      "--mode",
+      "development",
+      "--persist-to",
+      persistenceDir,
+      "--host",
+      "127.0.0.1",
+      "--port",
+      String(port),
+    ],
     {
       cwd: apiDir,
       detached: true,
@@ -221,6 +247,7 @@ try {
   });
   const baseUrl = `http://127.0.0.1:${port}`;
   await waitForPort(port, server, controller.signal);
+  phase = "cf dev HTTP readiness";
   await waitForHttpReady(`${baseUrl}/`, server, controller.signal);
   console.log("cf dev is ready.");
 
@@ -245,6 +272,7 @@ try {
 
   console.log("Smoke test passed: app HTML, API health/cache policy, and JSON API 404.");
 } catch (error) {
+  if (controller.signal.aborted) console.error(`Smoke timed out during ${phase}.`);
   console.error(error);
   process.exitCode = 1;
 } finally {
