@@ -1,6 +1,6 @@
 const LOCAL_D1_ID = "00000000-0000-4000-8000-000000000000";
 const STAGING_D1_ID = "68a0f133-e48d-45a5-9edc-5a361a37bb07";
-const PRODUCTION_D1_ID = "TODO-production-d1-id";
+const PRODUCTION_D1_ID = "de04dcfd-4fb3-441c-89c0-868f5a47730c";
 
 export interface Environment {
   name: string;

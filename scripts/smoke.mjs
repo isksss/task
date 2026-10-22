@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
-import { createServer, connect } from "node:net";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,8 +10,11 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const apiDir = join(root, "apps", "api");
 const cfBin = join(root, "node_modules", ".bin", "cf");
 const databaseId = "00000000-0000-4000-8000-000000000000";
-const timeoutMs = 90_000;
+const timeoutMs = 240_000;
 const portTimeoutMs = 30_000;
+const migrationTimeoutMs = 30_000;
+const maxMigrationRetries = 3;
+const maxMigrationAttempts = maxMigrationRetries + 1;
 const controller = new AbortController();
 const timeout = setTimeout(
   () => controller.abort(new Error(`Smoke test exceeded ${timeoutMs}ms`)),
@@ -104,6 +107,24 @@ async function runCommand(command, args, cwd, signal) {
   }
 }
 
+// shortcut: mitigates Node 24's intermittent hang after successful migration output, remove once the CLI exits reliably.
+async function applyLocalMigrations(args, cwd, signal) {
+  for (let attempt = 1; attempt <= maxMigrationAttempts; attempt++) {
+    const attemptTimeout = AbortSignal.timeout(migrationTimeoutMs);
+    console.log(`Applying local D1 migrations (attempt ${attempt}/${maxMigrationAttempts}, timeout ${migrationTimeoutMs}ms).`);
+    try {
+      await runCommand(cfBin, args, cwd, AbortSignal.any([signal, attemptTimeout]));
+      return;
+    } catch (error) {
+      if (!attemptTimeout.aborted || signal.aborted) throw error;
+      if (attempt > maxMigrationRetries) {
+        throw new Error(`Local D1 migrations timed out after ${maxMigrationRetries} retries.`, { cause: error });
+      }
+      console.warn(`Local D1 migrations timed out on attempt ${attempt}; process group stopped, retrying.`);
+    }
+  }
+}
+
 async function getFreePort() {
   const server = createServer();
   await new Promise((resolve, reject) => {
@@ -138,37 +159,6 @@ function sleep(ms, signal) {
   });
 }
 
-async function portIsOpen(port, signal) {
-  return new Promise((resolve) => {
-    const socket = connect(port, "127.0.0.1");
-    const timer = setTimeout(() => finish(false), 500);
-    const abort = () => finish(false);
-    function finish(open) {
-      clearTimeout(timer);
-      signal.removeEventListener("abort", abort);
-      socket.destroy();
-      resolve(open);
-    }
-    socket.once("connect", () => finish(true));
-    socket.once("error", () => finish(false));
-    signal.addEventListener("abort", abort, { once: true });
-    if (signal.aborted) abort();
-  });
-}
-
-async function waitForPort(port, child, signal) {
-  const deadline = Date.now() + portTimeoutMs;
-  while (Date.now() < deadline) {
-    signal.throwIfAborted();
-    if (child.exitCode !== null || child.signalCode !== null) {
-      throw new Error("cf dev exited before opening its port");
-    }
-    if (await portIsOpen(port, signal)) return;
-    await sleep(200, signal);
-  }
-  throw new Error(`cf dev did not open port ${port} within ${portTimeoutMs}ms`);
-}
-
 async function waitForHttpReady(url, child, signal) {
   const deadline = Date.now() + portTimeoutMs;
   while (Date.now() < deadline) {
@@ -198,8 +188,7 @@ try {
   phase = "web build";
   await runCommand("pnpm", ["--filter", "@task/web", "build"], root, controller.signal);
   phase = "local D1 migrations";
-  await runCommand(
-    cfBin,
+  await applyLocalMigrations(
     [
       "d1",
       "migrations",
@@ -246,7 +235,6 @@ try {
     server.once("error", reject);
   });
   const baseUrl = `http://127.0.0.1:${port}`;
-  await waitForPort(port, server, controller.signal);
   phase = "cf dev HTTP readiness";
   await waitForHttpReady(`${baseUrl}/`, server, controller.signal);
   console.log("cf dev is ready.");

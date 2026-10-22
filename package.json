@@ -10,7 +10,8 @@
     "typecheck": "pnpm --recursive --if-present typecheck",
     "build": "pnpm --filter @task/web build && pnpm --filter @task/api build",
     "test": "pnpm --filter @task/api test",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "check:prod-guard": "node scripts/check-prod-guard.mjs"
   },
   "devDependencies": {
     "cf": "0.15.0",

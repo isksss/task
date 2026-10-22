@@ -24,7 +24,7 @@ API のテストは `@cloudflare/vitest-plugin`（`1.4.6`）を使い、`cloudfl
 
 ## デプロイ
 
-staging は `pnpm --filter @task/api deploy:staging`、production は `pnpm --filter @task/api deploy:production` を必ず経由してください。production は専用 script が設定する `TASK_ALLOW_PRODUCTION_DEPLOY=1` も必要なため、mode 未指定や素の `cf deploy` で本番 Worker が選ばれることはありません。`cf deploy --help` では `--mode` の既定値は表示されていません。
+staging は `pnpm --filter @task/api deploy:staging`、production は `pnpm --filter @task/api deploy:production` を経由してください。`TASK_ALLOW_PRODUCTION_DEPLOY=1` は誤操作防止のための意図的な許可フラグであり、強制的なアクセス制御ではありません。環境変数を設定できる利用者は他のコマンドからも production を実行できるため、権限管理は Cloudflare 側で行ってください。`cf deploy --help` では `--mode` の既定値は表示されていません。
 
 ## D1
 
@@ -34,4 +34,4 @@ staging は `pnpm --filter @task/api deploy:staging`、production は `pnpm --fi
 pnpm --filter @task/api exec cf d1 migrations apply 00000000-0000-4000-8000-000000000000 --local --mode development
 ```
 
-`apps/api/cloudflare.config.ts` のローカル D1 ID はローカル確認用プレースホルダで、staging / production の D1 ID も要設定です。今回は空の初期 migration のみです。Cloudflare へのログイン、リモート D1 作成・変更、デプロイは行いません。
+`apps/api/src/config-environment.ts` のローカル D1 ID はローカル確認用プレースホルダです。staging / production の D1 ID は設定済みです。今回は空の初期 migration のみです。Cloudflare へのログイン、リモート D1 作成・変更、デプロイは行いません。

@@ -39,9 +39,12 @@ describe("Cloudflare environment configuration", () => {
   });
 
   it("rejects TODO database IDs and unknown modes", () => {
-    expect(() => environmentForMode("production", { allowProduction: true })).toThrow(
-      "TODO-production-d1-id",
-    );
+    expect(() =>
+      environmentForMode("production", {
+        allowProduction: true,
+        productionD1Id: "TODO-production-d1-id",
+      }),
+    ).toThrow("TODO-production-d1-id");
     expect(() => environmentForMode("staging", { stagingD1Id: "TODO-staging-d1-id" })).toThrow(
       "TODO-staging-d1-id",
     );
