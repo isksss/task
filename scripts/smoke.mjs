@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { StringDecoder } from "node:string_decoder";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -13,8 +14,6 @@ const databaseId = "00000000-0000-4000-8000-000000000000";
 const timeoutMs = process.argv.includes("--e2e") ? 600_000 : 240_000;
 const portTimeoutMs = 30_000;
 const migrationTimeoutMs = 30_000;
-const maxMigrationRetries = 3;
-const maxMigrationAttempts = maxMigrationRetries + 1;
 let persistenceDir;
 const controller = new AbortController();
 const timeout = setTimeout(
@@ -108,32 +107,97 @@ async function runCommand(command, args, cwd, signal) {
   }
 }
 
-// shortcut: mitigates Node 24's intermittent hang after successful migration output, remove once the CLI exits reliably.
+function migrationOutputResult(output, expectedCount) {
+  const statuses = [...output.matchAll(/"status"\s*:\s*"([^"]+)"/g)].map(([, status]) => status);
+  const failedStatus = statuses.find((status) => status !== "✅");
+  if (failedStatus !== undefined) {
+    return new Error(`Unexpected D1 migration status: ${failedStatus}`);
+  }
+  if (statuses.length > expectedCount) {
+    return new Error(`Expected ${expectedCount} D1 migrations, saw ${statuses.length}.`);
+  }
+  if (output.includes("No migrations to apply")) {
+    return statuses.length === 0
+      ? true
+      : new Error("D1 reported no migrations to apply after listing migrations.");
+  }
+  return expectedCount > 0 && statuses.length === expectedCount;
+}
+
+assert.equal(migrationOutputResult('{"status":"✅"}', 1), true);
+assert.match(migrationOutputResult('{"status":"❌"}', 1).message, /status: ❌/);
+assert.equal(migrationOutputResult("✅ No migrations to apply!", 4), true);
+assert.equal(migrationOutputResult("", 0), false);
+
+function waitForMigrationResult(child, expectedCount, signal) {
+  return new Promise((resolve, reject) => {
+    const decoder = new StringDecoder("utf8");
+    let output = "";
+    let settled = false;
+    const cleanup = () => {
+      child.off("error", onError);
+      child.off("close", onClose);
+      child.stdout.off("data", onData);
+      child.stdout.off("error", onError);
+      signal.removeEventListener("abort", onAbort);
+    };
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      callback(value);
+    };
+    const onError = (error) => finish(reject, error);
+    const onClose = (code, childSignal) => {
+      if (code === 0) finish(resolve, { completed: true });
+      else finish(reject, new Error(`cf d1 migrations apply failed (${childSignal ?? code})`));
+    };
+    const onData = (chunk) => {
+      process.stdout.write(chunk);
+      output += decoder.write(chunk);
+      const result = migrationOutputResult(output, expectedCount);
+      if (result instanceof Error) finish(reject, result);
+      else if (result) finish(resolve, { completed: true });
+    };
+    const onAbort = () => finish(reject, signal.reason);
+
+    child.stdout.on("data", onData);
+    child.stdout.on("error", onError);
+    child.once("error", onError);
+    child.once("close", onClose);
+    signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) onAbort();
+  });
+}
+
+// shortcut: relies on Wrangler's JSON status rows; update the monitor if the CLI output format changes.
 async function applyLocalMigrations(args, cwd, signal) {
-  for (let attempt = 1; attempt <= maxMigrationAttempts; attempt++) {
-    const attemptTimeout = AbortSignal.timeout(migrationTimeoutMs);
-    console.log(
-      `Applying local D1 migrations (attempt ${attempt}/${maxMigrationAttempts}, timeout ${migrationTimeoutMs}ms).`,
-    );
-    try {
-      await runCommand(cfBin, args, cwd, AbortSignal.any([signal, attemptTimeout]));
-      return;
-    } catch (error) {
-      if (error !== attemptTimeout.reason || signal.aborted) throw error;
-      if (attempt > maxMigrationRetries) {
-        throw new Error(`Local D1 migrations timed out after ${maxMigrationRetries} retries.`, {
-          cause: error,
-        });
-      }
-      const persistenceArg = args.indexOf("--persist-to");
-      await rm(persistenceDir, { recursive: true, force: true });
-      persistenceDir = await mkdtemp(join(tmpdir(), "task-smoke-"));
-      process.env.TASK_LOCAL_PERSIST_STATE = persistenceDir;
-      args[persistenceArg + 1] = persistenceDir;
-      console.warn(
-        `Local D1 migrations timed out on attempt ${attempt}; process group stopped, retrying.`,
-      );
+  const migrationCount = (await readdir(join(cwd, "migrations"), { withFileTypes: true })).filter(
+    (entry) => entry.isFile() && entry.name.endsWith(".sql"),
+  ).length;
+  const migrationTimeout = AbortSignal.timeout(migrationTimeoutMs);
+  const migrationSignal = AbortSignal.any([signal, migrationTimeout]);
+  console.log(
+    `Applying local D1 migrations (${migrationCount} expected, timeout ${migrationTimeoutMs}ms).`,
+  );
+  signal.throwIfAborted();
+  const child = spawn(cfBin, args, {
+    cwd,
+    detached: true,
+    env: { ...process.env, CI: "1" },
+    stdio: ["inherit", "pipe", "inherit"],
+  });
+  try {
+    await waitForMigrationResult(child, migrationCount, migrationSignal);
+  } catch (error) {
+    if (error === migrationTimeout.reason) {
+      throw new Error(`Local D1 migrations timed out after ${migrationTimeoutMs}ms.`, {
+        cause: error,
+      });
     }
+    throw error;
+  } finally {
+    await stopGroup(child);
   }
 }
 
