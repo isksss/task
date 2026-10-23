@@ -22,6 +22,8 @@ pnpm smoke
 pnpm e2e
 ```
 
+`pnpm fmt` は `**/*.sql` も SQLite 方言で整形します（設定: `.sql-formatter.json`）。
+
 `pnpm smoke` は web をビルドし、development mode でローカル D1 migration を適用してから `cf dev` の HTTP 動作を確認します。`pnpm e2e` は同じ一時 D1 環境に Chromium で接続し、ブラウザー操作と同期を検証します。初回は `pnpm exec playwright install chromium` でブラウザーを導入してください。どちらも Cloudflare へのログインは不要です。
 
 API のテストは `@cloudflare/vitest-plugin`（`1.4.6`）を使い、`cloudflare.config.ts` の設定を読み込んで Miniflare 上のローカル D1 で動きます。テストでは `remoteBindings: false` とし、Cloudflare ログインを必要としません。
