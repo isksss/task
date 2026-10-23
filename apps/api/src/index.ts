@@ -94,7 +94,9 @@ app.get("/api/export", async (c) => {
       c.env.DB.prepare(
         "SELECT id, task_id, tag_id, active FROM task_tags WHERE user_id = ? ORDER BY task_id, tag_id",
       ).bind(userId),
-      c.env.DB.prepare("SELECT timezone, locale, digest_time FROM users WHERE id = ?").bind(userId),
+      c.env.DB.prepare(
+        "SELECT timezone, locale, digest_time, default_priority, default_project_id FROM users WHERE id = ?",
+      ).bind(userId),
     ]);
     const tasks = taskRows.results as Array<{
       id: string;
@@ -130,6 +132,8 @@ app.get("/api/export", async (c) => {
           timezone: string;
           locale: "ja" | "en";
           digest_time: string;
+          default_priority: number;
+          default_project_id: string | null;
         }
       | undefined;
     if (!settings) throw new Error("Authenticated user settings missing from database");

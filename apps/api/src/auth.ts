@@ -20,6 +20,8 @@ export interface UserRow {
   timezone: string;
   locale: "ja" | "en";
   digest_time: string;
+  default_priority: number;
+  default_project_id: string | null;
   field_ts: string;
   seq_counter: number;
   settings_seq: number;

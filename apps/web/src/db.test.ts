@@ -12,6 +12,7 @@ import {
   initializeDatabase,
   purgeTrash,
   TaskDatabase,
+  type SettingsRecord,
   updateProject,
   updateSettings,
   updateTask,
@@ -96,6 +97,25 @@ describe("local database", () => {
     expect(await database.tasks.get(task.id)).toEqual(task);
   });
 
+  it("fills the new defaults into existing local settings records", async () => {
+    const database = await testDb();
+    await database.settings.put({
+      id: "settings",
+      timezone: "Asia/Tokyo",
+      locale: "ja",
+      digest_time: "08:00",
+      field_ts: {},
+      seq: 0,
+    } as unknown as SettingsRecord);
+
+    await initializeDatabase(database);
+
+    expect(await database.settings.get("settings")).toMatchObject({
+      default_priority: 0,
+      default_project_id: null,
+    });
+  });
+
   it("upgrades version-one task rows with the v2 relationship and recurrence fields", async () => {
     const name = `task-upgrade-${crypto.randomUUID()}`;
     const legacy = new Dexie(name);
@@ -116,6 +136,13 @@ describe("local database", () => {
       parent_task_id: null,
       recurrence: null,
     });
+  });
+
+  it("creates a task with its supplied priority", async () => {
+    const database = await testDb();
+    const task = await createTask("High priority", null, database, null, 3);
+    expect(task.priority).toBe(3);
+    expect((await database.outbox.toArray())[0]?.fields.priority?.v).toBe(3);
   });
 
   it("writes tags as independent LWW relationships", async () => {
@@ -292,7 +319,13 @@ describe("local database", () => {
   it("stores and validates synchronized user settings", async () => {
     const database = await testDb();
     const settings = await updateSettings(
-      { timezone: "America/Los_Angeles", locale: "en", digest_time: "07:15" },
+      {
+        timezone: "America/Los_Angeles",
+        locale: "en",
+        digest_time: "07:15",
+        default_priority: 3,
+        default_project_id: crypto.randomUUID(),
+      },
       database,
     );
     const queued = await database.outbox.toArray();
@@ -301,11 +334,16 @@ describe("local database", () => {
       timezone: "America/Los_Angeles",
       locale: "en",
       digest_time: "07:15",
+      default_priority: 3,
+      default_project_id: expect.any(String),
     });
     expect(queued).toHaveLength(1);
     expect(queued[0]).toMatchObject({ entity: "settings", id: "settings" });
     await expect(updateSettings({ timezone: "Not/A_Timezone" }, database)).rejects.toThrow(
       /timezone/i,
+    );
+    await expect(updateSettings({ default_priority: 4 as never }, database)).rejects.toThrow(
+      /priority/i,
     );
   });
 

@@ -17,6 +17,7 @@ import {
   MAX_TITLE_LENGTH,
   todayInTimeZone,
   type Locale,
+  type Priority,
   type Project,
   type Recurrence,
   type Task,
@@ -59,6 +60,7 @@ import {
   shiftCalendarMonth,
 } from "./calendar";
 import { sameRecurrence, weeklyRecurrenceNeedsWeekday } from "./recurrence-form";
+import { resolveTaskCreationDefaults, type TaskCreationView } from "./task-creation";
 import {
   ReauthenticationRequired,
   startSyncLoop,
@@ -75,16 +77,7 @@ import {
 } from "./push";
 import styles from "./App.module.css";
 
-type View =
-  | "all"
-  | "inbox"
-  | "today"
-  | "overdue"
-  | "trash"
-  | "calendar"
-  | "settings"
-  | { projectId: string }
-  | { tagId: string };
+type View = TaskCreationView;
 type CalendarMode = "month" | "week";
 type PushStatus =
   | "loading"
@@ -199,6 +192,19 @@ function descendants(projectId: string, projects: Project[]): Set<string> {
   return ids;
 }
 
+function flattenProjectOptions(
+  projects: Project[],
+  parentId: string | null = null,
+  depth = 0,
+): { project: Project; depth: number }[] {
+  return projects
+    .filter((project) => project.parent_id === parentId && project.deleted_at === null)
+    .flatMap((project) => [
+      { project, depth },
+      ...flattenProjectOptions(projects, project.id, depth + 1),
+    ]);
+}
+
 function renderProjectTree(
   parentId: string | null,
   projects: Project[],
@@ -242,6 +248,8 @@ export default function App() {
   const [timezone, setTimezone] = useState("Asia/Tokyo");
   const [locale, setLocale] = useState<Locale>(getDefaultLocale());
   const [digestTime, setDigestTime] = useState("08:00");
+  const [defaultPriority, setDefaultPriority] = useState<Priority>(0);
+  const [defaultProjectId, setDefaultProjectId] = useState<string | null>(null);
   const [pushStatus, setPushStatus] = useState<PushStatus>("loading");
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [exporting, setExporting] = useState(false);
@@ -357,6 +365,8 @@ export default function App() {
     setTimezone(settings.timezone);
     setLocale(settings.locale);
     setDigestTime(settings.digest_time);
+    setDefaultPriority(settings.default_priority);
+    setDefaultProjectId(settings.default_project_id);
   }, []);
 
   useEffect(() => {
@@ -423,6 +433,13 @@ export default function App() {
     () => projects.filter(({ deleted_at }) => deleted_at === null),
     [projects],
   );
+  const defaultProjectOptions = useMemo(
+    () => flattenProjectOptions(activeProjects),
+    [activeProjects],
+  );
+  const visibleDefaultProjectId = activeProjects.some(({ id }) => id === defaultProjectId)
+    ? (defaultProjectId ?? "")
+    : "";
   const activeTags = useMemo(() => tags.filter(({ deleted_at }) => deleted_at === null), [tags]);
   const taggedTaskIds = new Set(
     taskTags
@@ -508,9 +525,15 @@ export default function App() {
     event.preventDefault();
     const title = quickTitle;
     if (!title.trim()) return;
-    const projectId = selectedProject?.deleted_at === null ? selectedProject.id : null;
+    const { projectId, priority } = resolveTaskCreationDefaults(
+      view,
+      selectedProject?.deleted_at === null ? selectedProject.id : null,
+      defaultProjectId,
+      activeProjects,
+      defaultPriority,
+    );
     void act(async () => {
-      await createTask(title, projectId);
+      await createTask(title, projectId, db, null, priority);
       setQuickTitle("");
     });
   };
@@ -1517,6 +1540,40 @@ export default function App() {
                 </form>
               ))}
               {activeTags.length === 0 && <p className={styles.mutedSmall}>{t.emptyTags}</p>}
+              <h2 className={styles.sectionTitle}>{t.defaultTaskDefaults}</h2>
+              <label htmlFor="settings-default-priority">{t.defaultTaskPriority}</label>
+              <select
+                id="settings-default-priority"
+                value={defaultPriority}
+                onChange={(event) => {
+                  void act(() =>
+                    updateSettings({ default_priority: Number(event.target.value) as Priority }),
+                  );
+                }}
+              >
+                {priorityLabels.map((label, priority) => (
+                  <option key={priority} value={priority}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              <label htmlFor="settings-default-project">{t.defaultTaskProject}</label>
+              <select
+                id="settings-default-project"
+                value={visibleDefaultProjectId}
+                onChange={(event) => {
+                  void act(() =>
+                    updateSettings({ default_project_id: event.target.value || null }),
+                  );
+                }}
+              >
+                <option value="">{t.noProject}</option>
+                {defaultProjectOptions.map(({ project, depth }) => (
+                  <option key={project.id} value={project.id}>
+                    {`${"— ".repeat(depth)}${project.name || t.projects}`}
+                  </option>
+                ))}
+              </select>
               <label htmlFor="settings-timezone">{t.timezone}</label>
               <select
                 id="settings-timezone"

@@ -80,6 +80,8 @@ export interface UserSettings {
   timezone: string;
   locale: Locale;
   digest_time: string;
+  default_priority: Priority;
+  default_project_id: string | null;
 }
 
 export interface UserSettingsState extends UserSettings {

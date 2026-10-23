@@ -45,6 +45,37 @@ function waitForSyncResponse(page: Page, expected: ExpectedTaskChange, timeout =
   );
 }
 
+function waitForSyncChange(
+  page: Page,
+  entity: string,
+  fields: Record<string, ExpectedSyncValue>,
+  timeout = 10_000,
+) {
+  return page.waitForResponse(
+    (response) => {
+      if (
+        new URL(response.url()).pathname !== "/api/sync" ||
+        response.request().method() !== "POST"
+      )
+        return false;
+      const body = response.request().postDataJSON() as {
+        changes?: Array<{ entity?: string; fields?: Record<string, { v?: unknown }> }>;
+      };
+      return (
+        body.changes?.some(
+          (change) =>
+            change.entity === entity &&
+            Object.entries(fields).every(([field, value]) => {
+              const actual = change.fields?.[field]?.v;
+              return typeof value === "function" ? value(actual) : actual === value;
+            }),
+        ) ?? false
+      );
+    },
+    { timeout },
+  );
+}
+
 function waitForPullResponse(page: Page, timeout = 10_000) {
   return page.waitForResponse(
     (response) => {
@@ -180,6 +211,45 @@ test("syncs an offline edit to another browser context after reconnecting", asyn
   } finally {
     await otherContext.close();
   }
+});
+
+test("applies configured defaults to new tasks in All", async ({ page }) => {
+  await openApp(page);
+  const projectName = newTitle("X");
+  await page.getByRole("button", { name: "プロジェクトを作成", exact: true }).click();
+  const projectForm = page.locator("form").filter({ has: page.getByLabel("プロジェクト名") });
+  await projectForm.getByLabel("プロジェクト名").fill(projectName);
+  const projectSync = waitForSyncChange(page, "project", { name: projectName });
+  await projectForm.getByRole("button", { name: "プロジェクトを作成", exact: true }).click();
+  const projectResponse = await projectSync;
+  expect(projectResponse.ok()).toBe(true);
+  const projectChange = (
+    projectResponse.request().postDataJSON() as {
+      changes: Array<{ entity: string; id: string; fields?: Record<string, { v?: unknown }> }>;
+    }
+  ).changes.find((change) => change.entity === "project" && change.fields?.name?.v === projectName);
+  expect(projectChange).toBeTruthy();
+  const projectId = projectChange!.id;
+
+  await page.getByRole("button", { name: "設定", exact: true }).click();
+  const prioritySync = waitForSyncChange(page, "settings", { default_priority: 3 });
+  await page.getByLabel("既定の優先度").selectOption("3");
+  expect((await prioritySync).ok()).toBe(true);
+  const projectSettingSync = waitForSyncChange(page, "settings", {
+    default_project_id: projectId,
+  });
+  await page.getByLabel("既定のプロジェクト").selectOption(projectId);
+  expect((await projectSettingSync).ok()).toBe(true);
+
+  await page.getByRole("button", { name: "すべて", exact: true }).click();
+  const title = newTitle("e2e-defaults");
+  await page.getByRole("textbox", { name: "タスク名", exact: true }).fill(title);
+  const taskSync = waitForSyncResponse(page, {
+    fields: { title, project_id: projectId, priority: 3 },
+  });
+  await page.getByRole("button", { name: "タスクを追加", exact: true }).click();
+  await expect(taskRow(page, title)).toBeVisible();
+  expect((await taskSync).ok()).toBe(true);
 });
 
 test("keeps concurrent edits to different task fields", async ({ page, browser }) => {

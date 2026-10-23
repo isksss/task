@@ -134,7 +134,13 @@ const PROJECT_KEYS: (keyof ProjectFields)[] = [
 ];
 const TAG_KEYS: (keyof TagFields)[] = ["name", "deleted_at"];
 const TASK_TAG_KEYS: (keyof TaskTagFields)[] = ["active"];
-const SETTINGS_KEYS: (keyof UserSettings)[] = ["timezone", "locale", "digest_time"];
+const SETTINGS_KEYS: (keyof UserSettings)[] = [
+  "timezone",
+  "locale",
+  "digest_time",
+  "default_priority",
+  "default_project_id",
+];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -247,6 +253,10 @@ function validFieldValue(entity: SyncEntity, field: string, value: unknown): boo
         return value === "ja" || value === "en";
       case "digest_time":
         return typeof value === "string" && isValidClock(value);
+      case "default_priority":
+        return Number.isInteger(value) && Number(value) >= 0 && Number(value) <= 3;
+      case "default_project_id":
+        return value === null || isUuid(value);
     }
   }
   return false;
@@ -372,6 +382,8 @@ function settingsFromDb(row: DbUserSettings): UserSettingsState {
     timezone: row.timezone,
     locale: row.locale,
     digest_time: row.digest_time,
+    default_priority: row.default_priority,
+    default_project_id: row.default_project_id,
     field_ts: parseFieldTs<UserSettings>(row.field_ts),
     seq: row.settings_seq,
   };
@@ -456,7 +468,15 @@ function defaultTaskTag(id: string): TaskTag {
 }
 
 function defaultSettings(): UserSettingsState {
-  return { timezone: "Asia/Tokyo", locale: "ja", digest_time: "08:00", field_ts: {}, seq: 1 };
+  return {
+    timezone: "Asia/Tokyo",
+    locale: "ja",
+    digest_time: "08:00",
+    default_priority: 0,
+    default_project_id: null,
+    field_ts: {},
+    seq: 1,
+  };
 }
 
 function maxHlc(...clocks: (Hlc | undefined)[]): Hlc | undefined {
@@ -785,7 +805,13 @@ function currentState(
   }
   const row = (current as UserSettingsState | null) ?? defaultSettings();
   return {
-    values: { timezone: row.timezone, locale: row.locale, digest_time: row.digest_time },
+    values: {
+      timezone: row.timezone,
+      locale: row.locale,
+      digest_time: row.digest_time,
+      default_priority: row.default_priority,
+      default_project_id: row.default_project_id,
+    },
     field_ts: row.field_ts as LooseFieldTimestamps,
   };
 }
@@ -1318,6 +1344,26 @@ async function applyChange(
     }
   };
   merge();
+  if (
+    change.entity === "settings" &&
+    fields.default_project_id &&
+    mergedValue.default_project_id !== null &&
+    Object.hasOwn(
+      winningFields(currentVersions as FieldTimestamps<UserSettings>, fields),
+      "default_project_id",
+    ) &&
+    !(await readProject(env, user.id, mergedValue.default_project_id as string))
+  ) {
+    return {
+      rejected: {
+        change_id: change.change_id,
+        entity: "settings",
+        id: SETTINGS_ID,
+        reason: "project_not_found",
+        current: { entity: "settings", ...(current as UserSettingsState) },
+      },
+    };
+  }
   if (
     (change.entity === "task" || change.entity === "project" || change.entity === "tag") &&
     state.values.deleted_at === null &&
@@ -1946,6 +1992,7 @@ export async function handleSyncRequest(
       UNION ALL
       SELECT 'settings' AS entity, 'row' AS kind, id, settings_seq AS seq,
         json_object('timezone', timezone, 'locale', locale, 'digest_time', digest_time,
+          'default_priority', default_priority, 'default_project_id', default_project_id,
           'field_ts', json(field_ts), 'seq', settings_seq) AS payload,
         NULL AS purged_at
       FROM users WHERE id = ?

@@ -73,8 +73,8 @@ describe("API Worker", () => {
 
     await exportEnv.DB.batch([
       exportEnv.DB.prepare(
-        "UPDATE users SET timezone = ?, locale = ?, digest_time = ? WHERE id = ?",
-      ).bind("Europe/Paris", "en", "09:15", ownUser.id),
+        "UPDATE users SET timezone = ?, locale = ?, digest_time = ?, default_priority = ?, default_project_id = ? WHERE id = ?",
+      ).bind("Europe/Paris", "en", "09:15", 3, activeProjectId, ownUser.id),
       exportEnv.DB.prepare("UPDATE users SET timezone = ? WHERE id = ?").bind(
         "America/New_York",
         otherUser.id,
@@ -166,7 +166,13 @@ describe("API Worker", () => {
     expect(exported).toMatchObject({
       format: "task-export",
       version: 2,
-      settings: { timezone: "Europe/Paris", locale: "en", digest_time: "09:15" },
+      settings: {
+        timezone: "Europe/Paris",
+        locale: "en",
+        digest_time: "09:15",
+        default_priority: 3,
+        default_project_id: activeProjectId,
+      },
     });
     expect(exported.tasks).toHaveLength(2);
     expect(exported.projects).toHaveLength(2);

@@ -100,6 +100,8 @@ const DEFAULT_SETTINGS: UserSettings = {
   timezone: "Asia/Tokyo",
   locale: getDefaultLocale(),
   digest_time: "08:00",
+  default_priority: 0,
+  default_project_id: null,
 };
 
 function taskDefaults(id: string, createdAt = new Date().toISOString()): Task {
@@ -266,6 +268,16 @@ function validateSettings(settings: UserSettings): void {
   }
   if (settings.locale !== "ja" && settings.locale !== "en") throw new RangeError("Invalid locale");
   if (!clockIsValid(settings.digest_time)) throw new RangeError("Digest time must use HH:mm");
+  if (![0, 1, 2, 3].includes(settings.default_priority))
+    throw new RangeError("Invalid default priority");
+  if (
+    settings.default_project_id !== null &&
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      settings.default_project_id,
+    )
+  ) {
+    throw new RangeError("Invalid default project");
+  }
 }
 
 function validateTaskParent(tasks: Task[], id: string, parentTaskId: string | null): void {
@@ -314,8 +326,18 @@ export async function initializeDatabase(database = db): Promise<void> {
     if (!(await database.meta.get("device_id"))) {
       await database.meta.put({ key: "device_id", value: crypto.randomUUID() });
     }
-    if (!(await database.settings.get(SETTINGS_ID))) {
+    const settings = await database.settings.get(SETTINGS_ID);
+    if (!settings) {
       await database.settings.put(settingsDefaults());
+    } else if (
+      settings.default_priority === undefined ||
+      settings.default_project_id === undefined
+    ) {
+      await database.settings.put({
+        ...settings,
+        default_priority: settings.default_priority ?? 0,
+        default_project_id: settings.default_project_id ?? null,
+      });
     }
     if (!(await database.meta.get("since"))) await database.meta.put({ key: "since", value: 0 });
   });
@@ -326,11 +348,13 @@ export async function createTask(
   projectId: string | null = null,
   database = db,
   parentTaskId: string | null = null,
+  priority: Task["priority"] = 0,
 ): Promise<Task> {
   const normalizedTitle = title.trim();
   if (!normalizedTitle || [...normalizedTitle].length > MAX_TITLE_LENGTH) {
     throw new RangeError(`Task title must contain 1-${MAX_TITLE_LENGTH} characters`);
   }
+  if (![0, 1, 2, 3].includes(priority)) throw new RangeError("Invalid priority");
   return database.transaction(
     "rw",
     database.tasks,
@@ -356,7 +380,7 @@ export async function createTask(
         done: false,
         due_date: null,
         due_time: null,
-        priority: 0,
+        priority,
         created_at: defaults.created_at,
         deleted_at: null,
         deleted_batch_id: null,
@@ -878,6 +902,8 @@ export async function updateSettings(
       timezone: current.timezone,
       locale: current.locale,
       digest_time: current.digest_time,
+      default_priority: current.default_priority,
+      default_project_id: current.default_project_id,
       ...patch,
     };
     validateSettings(next);

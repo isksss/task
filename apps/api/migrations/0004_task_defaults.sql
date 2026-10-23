@@ -1,0 +1,2 @@
+ALTER TABLE users ADD COLUMN default_priority INTEGER NOT NULL DEFAULT 0 CHECK (default_priority BETWEEN 0 AND 3);
+ALTER TABLE users ADD COLUMN default_project_id TEXT DEFAULT NULL;

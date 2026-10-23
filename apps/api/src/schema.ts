@@ -1,5 +1,6 @@
 import initialMigration from "../migrations/0002_v1.sql?raw";
 import v2Migration from "../migrations/0003_v2.sql?raw";
+import taskDefaultsMigration from "../migrations/0004_task_defaults.sql?raw";
 
 function migrationStatements(sql: string): string[] {
   const statements: string[] = [];
@@ -27,6 +28,15 @@ export async function applySchema(db: D1Database): Promise<void> {
     .first<{ name: string }>();
   if (!v2Applied) {
     await db.batch(migrationStatements(v2Migration).map((statement) => db.prepare(statement)));
+  }
+  const columns = await db.prepare("PRAGMA table_info(users)").all<{ name: string }>();
+  const existing = new Set(columns.results.map(({ name }) => name));
+  for (const statement of migrationStatements(taskDefaultsMigration)) {
+    const column = /^ALTER TABLE users ADD COLUMN (\w+)/i.exec(statement)?.[1];
+    if (column && !existing.has(column)) {
+      await db.prepare(statement).run();
+      existing.add(column);
+    }
   }
 }
 

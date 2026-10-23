@@ -153,14 +153,28 @@ describe("POST /api/sync", () => {
           entity: "settings",
           id: "settings",
           fields: versionFields(
-            { timezone: "Europe/Paris", locale: "en", digest_time: "07:15" },
+            {
+              timezone: "Europe/Paris",
+              locale: "en",
+              digest_time: "07:15",
+              default_priority: 2,
+              default_project_id: projectId,
+            },
             timestamp,
           ),
         },
       ]),
     );
     expect(create.status).toBe(200);
-    expect(((await create.json()) as SyncResponse).rejected).toEqual([]);
+    const createBody = (await create.json()) as SyncResponse;
+    expect(createBody.rejected).toEqual([]);
+    expect(createBody.rows).toContainEqual(
+      expect.objectContaining({
+        entity: "settings",
+        default_priority: 2,
+        default_project_id: projectId,
+      }),
+    );
 
     const update = await postSync(
       workerEnv,
@@ -191,14 +205,28 @@ describe("POST /api/sync", () => {
           entity: "settings",
           id: "settings",
           fields: versionFields(
-            { timezone: "America/New_York", locale: "ja", digest_time: "08:30" },
+            {
+              timezone: "America/New_York",
+              locale: "ja",
+              digest_time: "08:30",
+              default_priority: 1,
+              default_project_id: null,
+            },
             later,
           ),
         },
       ]),
     );
     expect(update.status).toBe(200);
-    expect(((await update.json()) as SyncResponse).rejected).toEqual([]);
+    const updateBody = (await update.json()) as SyncResponse;
+    expect(updateBody.rejected).toEqual([]);
+    expect(updateBody.rows).toContainEqual(
+      expect.objectContaining({
+        entity: "settings",
+        default_priority: 1,
+        default_project_id: null,
+      }),
+    );
     expect(Math.max(...tracked.counts)).toBeLessThanOrEqual(100);
   });
 
@@ -1592,11 +1620,28 @@ describe("POST /api/sync", () => {
 
   it("synchronizes settings through their versioned fields", async () => {
     const workerEnv = makeTestEnv(crypto.randomUUID());
+    const projectId = crypto.randomUUID();
+    await postSync(
+      workerEnv,
+      syncBody([
+        projectChange(
+          {
+            parent_id: versioned(null),
+            name: versioned("Default project"),
+            deleted_at: versioned(null),
+            deleted_batch_id: versioned(null),
+          },
+          projectId,
+        ),
+      ]),
+    );
     const initial = await app.request("/api/settings", {}, workerEnv);
     expect(await initial.json()).toMatchObject({
       timezone: "Asia/Tokyo",
       locale: "ja",
       digest_time: "08:00",
+      default_priority: 0,
+      default_project_id: null,
     });
 
     const response = await app.request(
@@ -1606,13 +1651,78 @@ describe("POST /api/sync", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           change_id: crypto.randomUUID(),
-          fields: { timezone: versioned("America/New_York") },
+          fields: {
+            timezone: versioned("America/New_York"),
+            default_priority: versioned(3),
+            default_project_id: versioned(projectId),
+          },
         }),
       },
       workerEnv,
     );
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ timezone: "America/New_York" });
+    expect(await response.json()).toMatchObject({
+      timezone: "America/New_York",
+      default_priority: 3,
+      default_project_id: projectId,
+    });
+    const updatedSettings = await app.request("/api/settings", {}, workerEnv);
+    expect(await updatedSettings.json()).toMatchObject({
+      default_priority: 3,
+      default_project_id: projectId,
+    });
+
+    const sync = await postSync(workerEnv, syncBody([]));
+    const settings = ((await sync.json()) as SyncResponse).rows.find(
+      (row) => row.entity === "settings",
+    );
+    expect(settings).toMatchObject({
+      default_priority: 3,
+      default_project_id: projectId,
+    });
+  });
+
+  it("rejects invalid default priority and unowned or missing default projects", async () => {
+    const workerEnv = makeTestEnv(crypto.randomUUID());
+    const foreignEnv = makeTestEnv(crypto.randomUUID());
+    const foreignProjectId = crypto.randomUUID();
+    await postSync(
+      foreignEnv,
+      syncBody([
+        projectChange(
+          {
+            parent_id: versioned(null),
+            name: versioned("Foreign project"),
+            deleted_at: versioned(null),
+            deleted_batch_id: versioned(null),
+          },
+          foreignProjectId,
+        ),
+      ]),
+    );
+
+    const put = (fields: Record<string, ReturnType<typeof versioned>>) =>
+      app.request(
+        "/api/settings",
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ change_id: crypto.randomUUID(), fields }),
+        },
+        workerEnv,
+      );
+
+    for (const priority of [4, 2.5]) {
+      expect((await put({ default_priority: versioned(priority) })).status).toBe(400);
+    }
+    for (const projectId of [foreignProjectId, crypto.randomUUID()]) {
+      const response = await put({ default_project_id: versioned(projectId) });
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({
+        error: "change_rejected",
+        rejected: { reason: "project_not_found" },
+      });
+    }
   });
 });
 
