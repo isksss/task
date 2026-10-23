@@ -69,7 +69,7 @@ async function fetchKeys(team: string, refresh = false): Promise<AccessJwk[] | n
   try {
     const response = await fetch(`https://${team}/cdn-cgi/access/certs`, {
       headers: { Accept: "application/json" },
-      redirect: "error",
+      redirect: "manual",
     });
     if (!response.ok) return null;
     const body: unknown = await response.json();

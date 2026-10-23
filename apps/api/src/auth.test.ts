@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { app } from "./index";
-import { clearAccessCertCache } from "./auth";
+import { clearAccessCertCache, verifyAccessJwt } from "./auth";
 import { ensureTestSchema, makeTestEnv } from "./test-helpers";
 
 const team = "test.cloudflareaccess.com";
@@ -103,6 +103,21 @@ describe("Cloudflare Access JWT middleware", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true });
     expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+  });
+
+  it("requests certificates without following redirects", async () => {
+    const token = await makeToken();
+    expect(await verifyAccessJwt(token, accessEnv())).toMatchObject({ email: allowedEmail });
+    expect(vi.mocked(fetch).mock.calls[0]?.[1]).toMatchObject({ redirect: "manual" });
+  });
+
+  it("rejects a redirect response from the cert endpoint", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 302, headers: { Location: "https://redirect.example" } })),
+    );
+    const token = await makeToken();
+    expect(await verifyAccessJwt(token, accessEnv())).toBeNull();
   });
 
   it("rejects a modified signature and non-RS256 algorithms", async () => {
