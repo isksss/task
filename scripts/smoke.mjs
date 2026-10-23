@@ -112,21 +112,27 @@ async function runCommand(command, args, cwd, signal) {
 async function applyLocalMigrations(args, cwd, signal) {
   for (let attempt = 1; attempt <= maxMigrationAttempts; attempt++) {
     const attemptTimeout = AbortSignal.timeout(migrationTimeoutMs);
-    console.log(`Applying local D1 migrations (attempt ${attempt}/${maxMigrationAttempts}, timeout ${migrationTimeoutMs}ms).`);
+    console.log(
+      `Applying local D1 migrations (attempt ${attempt}/${maxMigrationAttempts}, timeout ${migrationTimeoutMs}ms).`,
+    );
     try {
       await runCommand(cfBin, args, cwd, AbortSignal.any([signal, attemptTimeout]));
       return;
     } catch (error) {
       if (error !== attemptTimeout.reason || signal.aborted) throw error;
       if (attempt > maxMigrationRetries) {
-        throw new Error(`Local D1 migrations timed out after ${maxMigrationRetries} retries.`, { cause: error });
+        throw new Error(`Local D1 migrations timed out after ${maxMigrationRetries} retries.`, {
+          cause: error,
+        });
       }
       const persistenceArg = args.indexOf("--persist-to");
       await rm(persistenceDir, { recursive: true, force: true });
       persistenceDir = await mkdtemp(join(tmpdir(), "task-smoke-"));
       process.env.TASK_LOCAL_PERSIST_STATE = persistenceDir;
       args[persistenceArg + 1] = persistenceDir;
-      console.warn(`Local D1 migrations timed out on attempt ${attempt}; process group stopped, retrying.`);
+      console.warn(
+        `Local D1 migrations timed out on attempt ${attempt}; process group stopped, retrying.`,
+      );
     }
   }
 }
@@ -138,7 +144,9 @@ async function getFreePort() {
     server.listen(0, "127.0.0.1", resolve);
   });
   const { port } = server.address();
-  await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  await new Promise((resolve, reject) =>
+    server.close((error) => (error ? reject(error) : resolve())),
+  );
   return port;
 }
 
@@ -252,7 +260,10 @@ try {
   assert.match(html, /<html[\s>]/i);
   assert.match(html, /<title>task<\/title>/);
   assert.match(html, /id="root"/);
-  assert.match(html, /<link\b(?=[^>]*\brel="manifest")(?=[^>]*\bcrossorigin="use-credentials")[^>]*>/i);
+  assert.match(
+    html,
+    /<link\b(?=[^>]*\brel="manifest")(?=[^>]*\bcrossorigin="use-credentials")[^>]*>/i,
+  );
   assert.match(html, /rel="apple-touch-icon"/i);
   const appleTouchIcon = await fetchSmoke(`${baseUrl}/icons/apple-touch-icon.png`);
   assert.equal(appleTouchIcon.status, 200, "GET /icons/apple-touch-icon.png should return 200");
@@ -266,7 +277,9 @@ try {
   assert.equal(manifest.display, "standalone");
   assert.ok(manifest.icons.some(({ sizes }) => sizes === "192x192"));
   assert.ok(manifest.icons.some(({ sizes }) => sizes === "512x512"));
-  assert.ok(manifest.icons.some(({ purpose }) => String(purpose).split(/\s+/).includes("maskable")));
+  assert.ok(
+    manifest.icons.some(({ purpose }) => String(purpose).split(/\s+/).includes("maskable")),
+  );
   for (const { src } of manifest.icons) {
     const icon = await fetchSmoke(new URL(src, baseUrl));
     assert.equal(icon.status, 200, `GET ${src} should return 200`);
@@ -287,7 +300,9 @@ try {
   assert.equal(missing.headers.get("cache-control"), "no-store");
   assert.deepEqual(await missing.json(), { error: "not_found" });
 
-  console.log("Smoke test passed: app shell, PWA assets, API health/cache policy, and JSON API 404.");
+  console.log(
+    "Smoke test passed: app shell, PWA assets, API health/cache policy, and JSON API 404.",
+  );
   if (process.argv.includes("--e2e")) {
     phase = "Playwright E2E";
     process.env.E2E_BASE_URL = baseUrl;

@@ -56,22 +56,28 @@ function accessEnv(overrides: Record<string, string> = {}) {
 }
 
 async function requestToken(token: string, workerEnv = accessEnv()) {
-  return app.request(
-    "/api/health",
-    { headers: { "Cf-Access-Jwt-Assertion": token } },
-    workerEnv,
-  );
+  return app.request("/api/health", { headers: { "Cf-Access-Jwt-Assertion": token } }, workerEnv);
 }
 
 beforeAll(async () => {
   [signingKey, otherKey] = await Promise.all([
     crypto.subtle.generateKey(
-      { name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: Uint8Array.of(1, 0, 1), hash: "SHA-256" },
+      {
+        name: "RSASSA-PKCS1-v1_5",
+        modulusLength: 2048,
+        publicExponent: Uint8Array.of(1, 0, 1),
+        hash: "SHA-256",
+      },
       true,
       ["sign", "verify"],
     ),
     crypto.subtle.generateKey(
-      { name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: Uint8Array.of(1, 0, 1), hash: "SHA-256" },
+      {
+        name: "RSASSA-PKCS1-v1_5",
+        modulusLength: 2048,
+        publicExponent: Uint8Array.of(1, 0, 1),
+        hash: "SHA-256",
+      },
       true,
       ["sign", "verify"],
     ),
@@ -114,7 +120,10 @@ describe("Cloudflare Access JWT middleware", () => {
   it("rejects a redirect response from the cert endpoint", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => new Response(null, { status: 302, headers: { Location: "https://redirect.example" } })),
+      vi.fn(
+        async () =>
+          new Response(null, { status: 302, headers: { Location: "https://redirect.example" } }),
+      ),
     );
     const token = await makeToken();
     expect(await verifyAccessJwt(token, accessEnv())).toBeNull();

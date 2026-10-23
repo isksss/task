@@ -159,16 +159,19 @@ function isValidDate(value: string): boolean {
 }
 
 function isValidInstant(value: string): boolean {
-  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,3})?(Z|[+-](\d{2}):(\d{2}))$/.exec(value);
+  const match =
+    /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,3})?(Z|[+-](\d{2}):(\d{2}))$/.exec(
+      value,
+    );
   return Boolean(
     value.length <= 40 &&
-      match &&
-      isValidDate(match[1]!) &&
-      Number(match[2]) <= 23 &&
-      Number(match[3]) <= 59 &&
-      Number(match[4]) <= 59 &&
-      (match[5] === "Z" || (Number(match[6]) <= 23 && Number(match[7]) <= 59)) &&
-      Number.isFinite(Date.parse(value)),
+    match &&
+    isValidDate(match[1]!) &&
+    Number(match[2]) <= 23 &&
+    Number(match[3]) <= 59 &&
+    Number(match[4]) <= 59 &&
+    (match[5] === "Z" || (Number(match[6]) <= 23 && Number(match[7]) <= 59)) &&
+    Number.isFinite(Date.parse(value)),
   );
 }
 
@@ -220,7 +223,11 @@ function validFieldValue(entity: SyncEntity, field: string, value: unknown): boo
   if (entity === "tag") {
     switch (field as keyof TagFields) {
       case "name":
-        return typeof value === "string" && value.trim().length > 0 && [...value].length <= MAX_TITLE_LENGTH;
+        return (
+          typeof value === "string" &&
+          value.trim().length > 0 &&
+          [...value].length <= MAX_TITLE_LENGTH
+        );
       case "deleted_at":
         return value === null || (typeof value === "string" && isValidInstant(value));
     }
@@ -250,13 +257,30 @@ function parseChange(value: unknown): LooseChange {
   const { change_id, entity, id, fields } = value;
   if (
     !isUuid(change_id) ||
-    (entity !== "task" && entity !== "project" && entity !== "tag" && entity !== "task_tag" && entity !== "settings") ||
-    (entity === "settings" ? id !== SETTINGS_ID : entity === "task_tag" ? typeof id !== "string" || !taskTagIds(id) : !isUuid(id)) ||
+    (entity !== "task" &&
+      entity !== "project" &&
+      entity !== "tag" &&
+      entity !== "task_tag" &&
+      entity !== "settings") ||
+    (entity === "settings"
+      ? id !== SETTINGS_ID
+      : entity === "task_tag"
+        ? typeof id !== "string" || !taskTagIds(id)
+        : !isUuid(id)) ||
     !isRecord(fields)
   ) {
     throw new TypeError("invalid change envelope");
   }
-  const allowed = entity === "task" ? TASK_KEYS : entity === "project" ? PROJECT_KEYS : entity === "tag" ? TAG_KEYS : entity === "task_tag" ? TASK_TAG_KEYS : SETTINGS_KEYS;
+  const allowed =
+    entity === "task"
+      ? TASK_KEYS
+      : entity === "project"
+        ? PROJECT_KEYS
+        : entity === "tag"
+          ? TAG_KEYS
+          : entity === "task_tag"
+            ? TASK_TAG_KEYS
+            : SETTINGS_KEYS;
   const entries = Object.entries(fields);
   if (entries.length === 0 || entries.some(([key]) => !allowed.includes(key as never))) {
     throw new TypeError("invalid change fields");
@@ -330,7 +354,7 @@ function taskFromDb(row: DbTask): Task {
   return {
     ...row,
     done: row.done === 1,
-    recurrence: row.recurrence === null ? null : JSON.parse(row.recurrence) as Recurrence,
+    recurrence: row.recurrence === null ? null : (JSON.parse(row.recurrence) as Recurrence),
     field_ts: parseFieldTs<TaskFields>(row.field_ts),
   };
 }
@@ -390,7 +414,15 @@ async function readSettings(env: SyncEnv, user: UserRow): Promise<UserSettingsSt
 }
 
 function defaultProject(id: string): Project {
-  return { id, parent_id: null, name: "", deleted_at: null, deleted_batch_id: null, field_ts: {}, seq: 0 };
+  return {
+    id,
+    parent_id: null,
+    name: "",
+    deleted_at: null,
+    deleted_batch_id: null,
+    field_ts: {},
+    seq: 0,
+  };
 }
 
 function defaultTask(id: string, now: string): Task {
@@ -446,7 +478,9 @@ function encodePageToken(value: PageToken): string {
   const bytes = new TextEncoder().encode(JSON.stringify(value));
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
-  return PAGE_TOKEN_PREFIX + btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return (
+    PAGE_TOKEN_PREFIX + btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+  );
 }
 
 function decodePageToken(value: string): PageToken | null {
@@ -457,7 +491,9 @@ function decodePageToken(value: string): PageToken | null {
     const base64 = encoded.replace(/-/g, "+").replace(/_/g, "/");
     const parsed: unknown = JSON.parse(
       new TextDecoder().decode(
-        Uint8Array.from(atob(base64 + "=".repeat((4 - (base64.length % 4)) % 4)), (char) => char.charCodeAt(0)),
+        Uint8Array.from(atob(base64 + "=".repeat((4 - (base64.length % 4)) % 4)), (char) =>
+          char.charCodeAt(0),
+        ),
       ),
     );
     if (!isRecord(parsed)) return null;
@@ -555,27 +591,36 @@ function updateVersionedRow(
     const incomingDevice = inputValue(field, "hlc.device_id");
     return `(${ts} IS NULL OR ${ts} < ${incomingTs} OR (${ts} = ${incomingTs} AND (${counter} < ${incomingCounter} OR (${counter} = ${incomingCounter} AND ${device} < ${incomingDevice}))))`;
   };
-  const setParts = entries.map(([field]) =>
-    `${field} = CASE WHEN ${conditionForInput(field)} THEN ${inputValue(field, "v")} ELSE ${field} END`,
+  const setParts = entries.map(
+    ([field]) =>
+      `${field} = CASE WHEN ${conditionForInput(field)} THEN ${inputValue(field, "v")} ELSE ${field} END`,
   );
   const fieldTsExpression = `json_set(field_ts, ${entries
-    .map(([field]) =>
-      `'$.${field}', json(CASE WHEN ${conditionForInput(field)} THEN ${inputValue(field, "hlc")} ELSE json_extract(field_ts, '$.${field}') END)`,
+    .map(
+      ([field]) =>
+        `'$.${field}', json(CASE WHEN ${conditionForInput(field)} THEN ${inputValue(field, "hlc")} ELSE json_extract(field_ts, '$.${field}') END)`,
     )
     .join(", ")})`;
   setParts.push(`field_ts = ${fieldTsExpression}`);
-  setParts.push(table === "users"
-    ? "settings_seq = (SELECT seq_counter FROM users WHERE id = ?)"
-    : "seq = (SELECT seq_counter FROM users WHERE id = ?)");
+  setParts.push(
+    table === "users"
+      ? "settings_seq = (SELECT seq_counter FROM users WHERE id = ?)"
+      : "seq = (SELECT seq_counter FROM users WHERE id = ?)",
+  );
 
   const where = entries.map(([field]) => conditionForInput(field)).join(" OR ");
   const whereId = table === "users" ? "id = ?" : "user_id = ? AND id = ?";
   const query = `WITH incoming(data) AS (SELECT json(?)) UPDATE ${table} SET ${setParts.join(", ")} WHERE ${whereId} AND (${where})`;
   const payload = encodeJson({
-    fields: Object.fromEntries(entries.map(([field, update]) => [field, {
-      v: dbFieldValue(field, update.v),
-      hlc: update.hlc,
-    }])),
+    fields: Object.fromEntries(
+      entries.map(([field, update]) => [
+        field,
+        {
+          v: dbFieldValue(field, update.v),
+          hlc: update.hlc,
+        },
+      ]),
+    ),
   });
   return env.DB.prepare(query).bind(
     payload,
@@ -600,8 +645,18 @@ function projectTrashStatement(
      WHERE user_id = ? AND id = ? AND project_id = ? AND deleted_at IS NULL
        AND EXISTS (SELECT 1 FROM projects WHERE user_id = ? AND id = ? AND deleted_at IS NOT NULL AND deleted_batch_id IS NOT NULL)`,
   ).bind(
-    userId, projectId, userId, projectId, encodeJson(hlc), encodeJson(hlc),
-    userId, userId, taskId, projectId, userId, projectId,
+    userId,
+    projectId,
+    userId,
+    projectId,
+    encodeJson(hlc),
+    encodeJson(hlc),
+    userId,
+    userId,
+    taskId,
+    projectId,
+    userId,
+    projectId,
   );
 }
 
@@ -632,10 +687,30 @@ function recurringTaskStatements(
          AND (? IS NULL OR EXISTS (SELECT 1 FROM projects WHERE user_id = ? AND id = ? AND deleted_at IS NULL))
          AND (? IS NULL OR EXISTS (SELECT 1 FROM tasks WHERE user_id = ? AND id = ? AND deleted_at IS NULL))`,
     ).bind(
-      id, userId, fields.project_id, fields.parent_task_id, fields.recurrence === null ? null : encodeJson(fields.recurrence),
-      fields.title, fields.note, fields.due_date, fields.due_time, fields.priority, fields.created_at,
-      encodeJson(fieldTs), userId, id, userId, id, userId, sourceId,
-      fields.project_id, userId, fields.project_id, fields.parent_task_id, userId, fields.parent_task_id,
+      id,
+      userId,
+      fields.project_id,
+      fields.parent_task_id,
+      fields.recurrence === null ? null : encodeJson(fields.recurrence),
+      fields.title,
+      fields.note,
+      fields.due_date,
+      fields.due_time,
+      fields.priority,
+      fields.created_at,
+      encodeJson(fieldTs),
+      userId,
+      id,
+      userId,
+      id,
+      userId,
+      sourceId,
+      fields.project_id,
+      userId,
+      fields.project_id,
+      fields.parent_task_id,
+      userId,
+      fields.parent_task_id,
     ),
   ];
 }
@@ -695,12 +770,18 @@ function currentState(
   if (change.entity === "tag") {
     const row = current as Tag | null;
     const fallback = defaultTag(change.id);
-    return { values: { ...(row ?? fallback) }, field_ts: (row ?? fallback).field_ts as LooseFieldTimestamps };
+    return {
+      values: { ...(row ?? fallback) },
+      field_ts: (row ?? fallback).field_ts as LooseFieldTimestamps,
+    };
   }
   if (change.entity === "task_tag") {
     const row = current as TaskTag | null;
     const fallback = defaultTaskTag(change.id);
-    return { values: { active: (row ?? fallback).active }, field_ts: (row ?? fallback).field_ts as LooseFieldTimestamps };
+    return {
+      values: { active: (row ?? fallback).active },
+      field_ts: (row ?? fallback).field_ts as LooseFieldTimestamps,
+    };
   }
   const row = (current as UserSettingsState | null) ?? defaultSettings();
   return {
@@ -715,7 +796,14 @@ async function foreignEntityExists(
   userId: string,
   id: string,
 ): Promise<boolean> {
-  const table = entity === "task" ? "tasks" : entity === "project" ? "projects" : entity === "tag" ? "tags" : "task_tags";
+  const table =
+    entity === "task"
+      ? "tasks"
+      : entity === "project"
+        ? "projects"
+        : entity === "tag"
+          ? "tags"
+          : "task_tags";
   const row = await env.DB.prepare(`SELECT user_id FROM ${table} WHERE id = ?`)
     .bind(id)
     .first<{ user_id: string }>();
@@ -728,13 +816,17 @@ async function getTombstone(
   entity: "task" | "project" | "tag",
   id: string,
 ): Promise<Tombstone | null> {
-  return env.DB.prepare("SELECT entity, id, purged_at, seq FROM tombstones WHERE user_id = ? AND entity = ? AND id = ?")
+  return env.DB.prepare(
+    "SELECT entity, id, purged_at, seq FROM tombstones WHERE user_id = ? AND entity = ? AND id = ?",
+  )
     .bind(userId, entity, id)
     .first<Tombstone>();
 }
 
 async function wasApplied(env: SyncEnv, userId: string, changeId: string): Promise<boolean> {
-  const row = await env.DB.prepare("SELECT 1 AS found FROM applied_changes WHERE user_id = ? AND change_id = ?")
+  const row = await env.DB.prepare(
+    "SELECT 1 AS found FROM applied_changes WHERE user_id = ? AND change_id = ?",
+  )
     .bind(userId, changeId)
     .first<{ found: number }>();
   return row !== null;
@@ -786,7 +878,10 @@ async function validateProjectParent(
   const depthFrom = (projectId: string, path: Set<string>): number => {
     if (path.has(projectId)) return Number.POSITIVE_INFINITY;
     const nextPath = new Set(path).add(projectId);
-    const childDepth = Math.max(0, ...(children.get(projectId) ?? []).map((child) => depthFrom(child, nextPath)));
+    const childDepth = Math.max(
+      0,
+      ...(children.get(projectId) ?? []).map((child) => depthFrom(child, nextPath)),
+    );
     return 1 + childDepth;
   };
   if (ancestorDepth + depthFrom(id, new Set()) > MAX_PROJECT_DEPTH) return "project_depth_exceeded";
@@ -806,7 +901,9 @@ async function validateTaskParent(
   if (parent.parent_task_id !== null) return "subtask_cannot_be_parent";
   const hasChildren = await env.DB.prepare(
     "SELECT 1 AS found FROM tasks WHERE user_id = ? AND parent_task_id = ? AND id <> ? LIMIT 1",
-  ).bind(userId, id, id).first<{ found: number }>();
+  )
+    .bind(userId, id, id)
+    .first<{ found: number }>();
   if (hasChildren) return "task_with_subtasks_cannot_be_subtask";
   return null;
 }
@@ -843,7 +940,10 @@ function cascadeTargets(
   let latest: Hlc | undefined;
   if (entity === "task" && (action === "delete" || action === "restore")) {
     for (const task of tasks) {
-      if (task.parent_task_id === id && (action === "delete" ? task.deleted_at === null : task.deleted_batch_id === batchId)) {
+      if (
+        task.parent_task_id === id &&
+        (action === "delete" ? task.deleted_at === null : task.deleted_batch_id === batchId)
+      ) {
         taskIds.add(task.id);
       }
     }
@@ -861,13 +961,17 @@ function cascadeTargets(
     if (action === "delete") {
       for (const projectId of descendants) projectIds.add(projectId);
       for (const task of tasks) {
-        if (task.deleted_at === null && (task.project_id === id || (task.project_id !== null && descendants.has(task.project_id)))) {
+        if (
+          task.deleted_at === null &&
+          (task.project_id === id || (task.project_id !== null && descendants.has(task.project_id)))
+        ) {
           taskIds.add(task.id);
         }
       }
     } else {
       for (const project of projects) {
-        if (descendants.has(project.id) && project.deleted_batch_id === batchId) projectIds.add(project.id);
+        if (descendants.has(project.id) && project.deleted_batch_id === batchId)
+          projectIds.add(project.id);
       }
       for (const task of tasks) {
         if (
@@ -881,8 +985,12 @@ function cascadeTargets(
   }
   const rootTaskIds = [...taskIds];
   for (const task of tasks) {
-    if (task.parent_task_id !== null && rootTaskIds.includes(task.parent_task_id) &&
-      (action === "delete" ? task.deleted_at === null : task.deleted_batch_id === batchId)) taskIds.add(task.id);
+    if (
+      task.parent_task_id !== null &&
+      rootTaskIds.includes(task.parent_task_id) &&
+      (action === "delete" ? task.deleted_at === null : task.deleted_batch_id === batchId)
+    )
+      taskIds.add(task.id);
   }
 
   for (const projectId of projectIds) {
@@ -937,7 +1045,17 @@ function cascadeUpdateStatement(
           WHERE child.user_id = ? AND child.deleted_batch_id = ?
         ) SELECT id FROM target_tasks
       )`;
-      whereValues = [userId, batchId, userId, rootProjectId!, userId, userId, batchId, userId, batchId];
+      whereValues = [
+        userId,
+        batchId,
+        userId,
+        rootProjectId!,
+        userId,
+        userId,
+        batchId,
+        userId,
+        batchId,
+      ];
     }
   } else if (table === "projects") {
     where = `user_id = ? AND id IN (
@@ -950,7 +1068,8 @@ function cascadeUpdateStatement(
     ) AND id <> ?`;
     whereValues = [userId, userId, rootProjectId!, deletedAt, batchId, userId, rootProjectId!];
   } else {
-    const projectRoot = "SELECT id FROM projects WHERE user_id = ? AND id = ? AND deleted_at = ? AND deleted_batch_id = ?";
+    const projectRoot =
+      "SELECT id FROM projects WHERE user_id = ? AND id = ? AND deleted_at = ? AND deleted_batch_id = ?";
     const taskCondition = "deleted_at IS NULL";
     const childCondition = "child.deleted_at IS NULL";
     where = `user_id = ? AND id IN (
@@ -1010,9 +1129,10 @@ function taskChildrenCascadeStatement(
   const atCondition = conditionFor("deleted_at", hlc);
   const batchCondition = conditionFor("deleted_batch_id", hlc);
   const stateCondition = mode === "delete" ? "deleted_at IS NULL" : "deleted_batch_id = ?";
-  const parentState = mode === "delete"
-    ? "deleted_at = ? AND deleted_batch_id = ?"
-    : "deleted_at IS NULL AND deleted_batch_id IS NULL";
+  const parentState =
+    mode === "delete"
+      ? "deleted_at = ? AND deleted_batch_id = ?"
+      : "deleted_at IS NULL AND deleted_batch_id IS NULL";
   const fullFieldTs = `json_set(field_ts,
     '$.deleted_at', json(CASE WHEN ${atCondition.sql} THEN ? ELSE json_extract(field_ts, '$.deleted_at') END),
     '$.deleted_batch_id', json(CASE WHEN ${batchCondition.sql} THEN ? ELSE json_extract(field_ts, '$.deleted_batch_id') END))`;
@@ -1026,15 +1146,23 @@ function taskChildrenCascadeStatement(
        AND EXISTS (SELECT 1 FROM tasks parent WHERE parent.user_id = ? AND parent.id = ? AND ${parentState})
        AND (${atCondition.sql} OR ${batchCondition.sql})`,
   ).bind(
-    ...atCondition.values, deletedAt,
-    ...batchCondition.values, mode === "restore" ? null : batchId,
-    ...atCondition.values, encodeJson(hlc),
-    ...batchCondition.values, encodeJson(hlc),
-    userId, userId, parentTaskId,
+    ...atCondition.values,
+    deletedAt,
+    ...batchCondition.values,
+    mode === "restore" ? null : batchId,
+    ...atCondition.values,
+    encodeJson(hlc),
+    ...batchCondition.values,
+    encodeJson(hlc),
+    userId,
+    userId,
+    parentTaskId,
     ...(mode === "restore" ? [batchId] : []),
-    userId, parentTaskId,
+    userId,
+    parentTaskId,
     ...(mode === "delete" ? [deletedAt!, batchId] : []),
-    ...atCondition.values, ...batchCondition.values,
+    ...atCondition.values,
+    ...batchCondition.values,
   );
 }
 
@@ -1044,7 +1172,11 @@ function appliedChangeStatement(env: SyncEnv, userId: string, changeId: string, 
   ).bind(userId, changeId, now);
 }
 
-function fieldVersionsForMerge(fields: Record<string, FieldUpdate>, now: number, fieldTs: LooseFieldTimestamps) {
+function fieldVersionsForMerge(
+  fields: Record<string, FieldUpdate>,
+  now: number,
+  fieldTs: LooseFieldTimestamps,
+) {
   const clamped: Record<string, FieldUpdate> = {};
   for (const [key, update] of Object.entries(fields)) {
     clamped[key] = {
@@ -1055,7 +1187,9 @@ function fieldVersionsForMerge(fields: Record<string, FieldUpdate>, now: number,
   return clamped;
 }
 
-function toTypedVersionedFields<T extends object>(fields: Record<string, FieldUpdate>): VersionedFields<T> {
+function toTypedVersionedFields<T extends object>(
+  fields: Record<string, FieldUpdate>,
+): VersionedFields<T> {
   return fields as VersionedFields<T>;
 }
 
@@ -1119,7 +1253,11 @@ async function applyChange(
     const deletionVersions = currentVersions as FieldTimestamps<TaskFields>;
     const deletedAtUpdate = fields.deleted_at;
     const currentDeletedAt = before.deleted_at as string | null;
-    if (deletedAtUpdate?.v !== undefined && deletedAtUpdate.v !== null && currentDeletedAt === null) {
+    if (
+      deletedAtUpdate?.v !== undefined &&
+      deletedAtUpdate.v !== null &&
+      currentDeletedAt === null
+    ) {
       const batchUpdate = fields.deleted_batch_id;
       if (batchUpdate?.v === undefined || batchUpdate.v === null) {
         const generated = nextHlc("server", nowMs, maxHlc(deletedAtUpdate.hlc, batchUpdate?.hlc));
@@ -1143,19 +1281,39 @@ async function applyChange(
   let mergedValue: Record<string, unknown> = { ...state.values };
   const merge = () => {
     if (change.entity === "task") {
-      const result = mergeLww(state.values as unknown as TaskFields, currentVersions as FieldTimestamps<TaskFields>, toTypedVersionedFields<TaskFields>(fields));
+      const result = mergeLww(
+        state.values as unknown as TaskFields,
+        currentVersions as FieldTimestamps<TaskFields>,
+        toTypedVersionedFields<TaskFields>(fields),
+      );
       mergedValue = result.value as unknown as Record<string, unknown>;
     } else if (change.entity === "project") {
-      const result = mergeLww(state.values as unknown as ProjectFields, currentVersions as FieldTimestamps<ProjectFields>, toTypedVersionedFields<ProjectFields>(fields));
+      const result = mergeLww(
+        state.values as unknown as ProjectFields,
+        currentVersions as FieldTimestamps<ProjectFields>,
+        toTypedVersionedFields<ProjectFields>(fields),
+      );
       mergedValue = result.value as unknown as Record<string, unknown>;
     } else if (change.entity === "tag") {
-      const result = mergeLww(state.values as unknown as TagFields, currentVersions as FieldTimestamps<TagFields>, toTypedVersionedFields<TagFields>(fields));
+      const result = mergeLww(
+        state.values as unknown as TagFields,
+        currentVersions as FieldTimestamps<TagFields>,
+        toTypedVersionedFields<TagFields>(fields),
+      );
       mergedValue = result.value as unknown as Record<string, unknown>;
     } else if (change.entity === "task_tag") {
-      const result = mergeLww(state.values as unknown as TaskTagFields, currentVersions as FieldTimestamps<TaskTagFields>, toTypedVersionedFields<TaskTagFields>(fields));
+      const result = mergeLww(
+        state.values as unknown as TaskTagFields,
+        currentVersions as FieldTimestamps<TaskTagFields>,
+        toTypedVersionedFields<TaskTagFields>(fields),
+      );
       mergedValue = result.value as unknown as Record<string, unknown>;
     } else {
-      const result = mergeLww(state.values as unknown as UserSettings, currentVersions as FieldTimestamps<UserSettings>, toTypedVersionedFields<UserSettings>(fields));
+      const result = mergeLww(
+        state.values as unknown as UserSettings,
+        currentVersions as FieldTimestamps<UserSettings>,
+        toTypedVersionedFields<UserSettings>(fields),
+      );
       mergedValue = result.value as unknown as Record<string, unknown>;
     }
   };
@@ -1183,7 +1341,10 @@ async function applyChange(
             entity: "task",
             id: change.id,
             reason: "project_not_found",
-            current: { entity: "task", ...(current as Task | null ?? defaultTask(change.id, now)) },
+            current: {
+              entity: "task",
+              ...((current as Task | null) ?? defaultTask(change.id, now)),
+            },
           } as RejectedChange,
         };
       }
@@ -1205,7 +1366,11 @@ async function applyChange(
       }
       if (target.deleted_at !== null && mergedValue.deleted_at === null) {
         const targetClock = maxHlc(target.field_ts.deleted_at, target.field_ts.deleted_batch_id);
-        const forcedClock = nextHlc("server", nowMs, maxHlc(targetClock, ...allFieldClocks(fields)));
+        const forcedClock = nextHlc(
+          "server",
+          nowMs,
+          maxHlc(targetClock, ...allFieldClocks(fields)),
+        );
         fields.deleted_at = { v: target.deleted_at, hlc: forcedClock };
         fields.deleted_batch_id = { v: target.deleted_batch_id, hlc: forcedClock };
         merge();
@@ -1234,7 +1399,7 @@ async function applyChange(
           entity: "task",
           id: change.id,
           reason: "due_time_requires_date",
-          current: { entity: "task", ...(current as Task | null ?? defaultTask(change.id, now)) },
+          current: { entity: "task", ...((current as Task | null) ?? defaultTask(change.id, now)) },
         } as RejectedChange,
       };
     }
@@ -1331,8 +1496,15 @@ async function applyChange(
       readTask(env, user.id, ids.taskId),
       readTag(env, user.id, ids.tagId),
     ]);
-    const reason = !task ? "task_not_found" : task.deleted_at !== null ? "task_deleted" :
-      !tag ? "tag_not_found" : tag.deleted_at !== null ? "tag_deleted" : null;
+    const reason = !task
+      ? "task_not_found"
+      : task.deleted_at !== null
+        ? "task_deleted"
+        : !tag
+          ? "tag_not_found"
+          : tag.deleted_at !== null
+            ? "tag_deleted"
+            : null;
     if (reason) {
       return {
         rejected: {
@@ -1340,7 +1512,10 @@ async function applyChange(
           entity: "task_tag",
           id: change.id,
           reason,
-          current: { entity: "task_tag", ...(current as TaskTag | null ?? defaultTaskTag(change.id)) },
+          current: {
+            entity: "task_tag",
+            ...((current as TaskTag | null) ?? defaultTaskTag(change.id)),
+          },
         } as RejectedChange,
       };
     }
@@ -1351,9 +1526,16 @@ async function applyChange(
     fields.parent_id &&
     mergedValue.parent_id !== (state.values.parent_id as string | null);
   const restoringProject =
-    change.entity === "project" && state.values.deleted_at !== null && mergedValue.deleted_at === null;
+    change.entity === "project" &&
+    state.values.deleted_at !== null &&
+    mergedValue.deleted_at === null;
   if (change.entity === "project" && (projectParentChanged || restoringProject)) {
-    const reason = await validateProjectParent(env, user.id, change.id, mergedValue.parent_id as string | null);
+    const reason = await validateProjectParent(
+      env,
+      user.id,
+      change.id,
+      mergedValue.parent_id as string | null,
+    );
     if (reason) {
       return {
         rejected: {
@@ -1361,13 +1543,18 @@ async function applyChange(
           entity: "project",
           id: change.id,
           reason,
-          current: { entity: "project", ...(current as Project | null ?? defaultProject(change.id)) },
+          current: {
+            entity: "project",
+            ...((current as Project | null) ?? defaultProject(change.id)),
+          },
         } as RejectedChange,
       };
     }
   }
 
-  let cascade: { action: "delete" | "restore"; batchId: string; deletedAt: string | null; hlc: Hlc } | undefined;
+  let cascade:
+    | { action: "delete" | "restore"; batchId: string; deletedAt: string | null; hlc: Hlc }
+    | undefined;
   if (change.entity === "project" || change.entity === "task") {
     const oldDeletedAt = (state.values.deleted_at ?? null) as string | null;
     const newDeletedAt = (mergedValue.deleted_at ?? null) as string | null;
@@ -1406,7 +1593,16 @@ async function applyChange(
           reason: "deleted_batch_immutable",
           current: {
             entity: change.entity,
-            ...(current ?? (change.entity === "task" ? defaultTask(change.id, now) : change.entity === "project" ? defaultProject(change.id) : change.entity === "tag" ? defaultTag(change.id) : change.entity === "task_tag" ? defaultTaskTag(change.id) : defaultSettings())),
+            ...(current ??
+              (change.entity === "task"
+                ? defaultTask(change.id, now)
+                : change.entity === "project"
+                  ? defaultProject(change.id)
+                  : change.entity === "tag"
+                    ? defaultTag(change.id)
+                    : change.entity === "task_tag"
+                      ? defaultTaskTag(change.id)
+                      : defaultSettings())),
           } as SyncRow,
         } as RejectedChange,
       };
@@ -1467,14 +1663,30 @@ async function applyChange(
     statements.push(insertBaseRow(env, change.entity, user.id, change.id, now));
   }
   if (Object.keys(changedFields).length > 0) {
-    statements.push(env.DB.prepare("UPDATE users SET seq_counter = seq_counter + 1 WHERE id = ?").bind(user.id));
-    const table = change.entity === "settings" ? "users" : change.entity === "task" ? "tasks" : change.entity === "project" ? "projects" : change.entity === "tag" ? "tags" : "task_tags";
+    statements.push(
+      env.DB.prepare("UPDATE users SET seq_counter = seq_counter + 1 WHERE id = ?").bind(user.id),
+    );
+    const table =
+      change.entity === "settings"
+        ? "users"
+        : change.entity === "task"
+          ? "tasks"
+          : change.entity === "project"
+            ? "projects"
+            : change.entity === "tag"
+              ? "tags"
+              : "task_tags";
     statements.push(updateVersionedRow(env, table, user.id, change.id, changedFields));
     if (projectTrash) {
-      statements.push(projectTrashStatement(env, user.id, change.id, projectTrash.projectId, projectTrash.hlc));
+      statements.push(
+        projectTrashStatement(env, user.id, change.id, projectTrash.projectId, projectTrash.hlc),
+      );
     }
     if (cascade) {
-      const [projects, tasks] = await Promise.all([loadProjectGraph(env, user.id), loadTaskGraph(env, user.id)]);
+      const [projects, tasks] = await Promise.all([
+        loadProjectGraph(env, user.id),
+        loadTaskGraph(env, user.id),
+      ]);
       const targets = cascadeTargets(
         change.entity as "task" | "project",
         change.id,
@@ -1483,12 +1695,11 @@ async function applyChange(
         projects,
         tasks,
       );
-      const cascadeClock = nextHlc(
-        "server",
-        nowMs,
-        maxHlc(cascade.hlc, targets.latestHlc),
-      );
-      if (change.entity === "project" && (targets.projectIds.length || cascade.action === "delete")) {
+      const cascadeClock = nextHlc("server", nowMs, maxHlc(cascade.hlc, targets.latestHlc));
+      if (
+        change.entity === "project" &&
+        (targets.projectIds.length || cascade.action === "delete")
+      ) {
         statements.push(
           cascadeUpdateStatement(
             env,
@@ -1503,25 +1714,47 @@ async function applyChange(
         );
       }
       if (change.entity === "task") {
-        statements.push(taskChildrenCascadeStatement(
-          env, user.id, change.id, cascade.action, cascade.batchId, cascade.deletedAt, cascadeClock,
-        ));
-      } else if (change.entity === "project" && (targets.taskIds.length || cascade.action === "delete")) {
-        statements.push(cascadeUpdateStatement(
-          env,
-          "tasks",
-          user.id,
-          cascade.action,
-          cascade.batchId,
-          cascade.deletedAt,
-          cascadeClock,
-          change.id,
-        ));
+        statements.push(
+          taskChildrenCascadeStatement(
+            env,
+            user.id,
+            change.id,
+            cascade.action,
+            cascade.batchId,
+            cascade.deletedAt,
+            cascadeClock,
+          ),
+        );
+      } else if (
+        change.entity === "project" &&
+        (targets.taskIds.length || cascade.action === "delete")
+      ) {
+        statements.push(
+          cascadeUpdateStatement(
+            env,
+            "tasks",
+            user.id,
+            cascade.action,
+            cascade.batchId,
+            cascade.deletedAt,
+            cascadeClock,
+            change.id,
+          ),
+        );
       }
     }
   }
   if (recurrenceOccurrence) {
-    statements.push(...recurringTaskStatements(env, user.id, change.id, recurrenceOccurrence.id, recurrenceOccurrence.fields, recurrenceOccurrence.hlc));
+    statements.push(
+      ...recurringTaskStatements(
+        env,
+        user.id,
+        change.id,
+        recurrenceOccurrence.id,
+        recurrenceOccurrence.fields,
+        recurrenceOccurrence.hlc,
+      ),
+    );
   }
   statements.push(appliedChangeStatement(env, user.id, change.change_id, now));
   try {
@@ -1529,8 +1762,12 @@ async function applyChange(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (change.entity === "project" && fields.parent_id) {
-      const reason = ["project_cycle", "project_depth_exceeded", "parent_not_found", "parent_deleted"]
-        .find((candidate) => message.includes(candidate));
+      const reason = [
+        "project_cycle",
+        "project_depth_exceeded",
+        "parent_not_found",
+        "parent_deleted",
+      ].find((candidate) => message.includes(candidate));
       if (reason) {
         return {
           rejected: {
@@ -1538,14 +1775,20 @@ async function applyChange(
             entity: "project",
             id: change.id,
             reason,
-            current: { entity: "project", ...(await readProject(env, user.id, change.id) ?? defaultProject(change.id)) },
+            current: {
+              entity: "project",
+              ...((await readProject(env, user.id, change.id)) ?? defaultProject(change.id)),
+            },
           },
         };
       }
     }
     if (change.entity === "task" && fields.parent_task_id) {
-      const reason = ["subtask_cannot_be_parent", "task_with_subtasks_cannot_be_subtask", "parent_task_not_found"]
-        .find((candidate) => message.includes(candidate));
+      const reason = [
+        "subtask_cannot_be_parent",
+        "task_with_subtasks_cannot_be_subtask",
+        "parent_task_not_found",
+      ].find((candidate) => message.includes(candidate));
       if (reason) {
         return {
           rejected: {
@@ -1553,7 +1796,10 @@ async function applyChange(
             entity: "task",
             id: change.id,
             reason,
-            current: { entity: "task", ...(await readTask(env, user.id, change.id) ?? defaultTask(change.id, now)) },
+            current: {
+              entity: "task",
+              ...((await readTask(env, user.id, change.id)) ?? defaultTask(change.id, now)),
+            },
           },
         };
       }
@@ -1561,25 +1807,34 @@ async function applyChange(
     throw error;
   }
   if (lostFields) {
-    const updatedCurrent = change.entity === "task"
-      ? await readTask(env, user.id, change.id)
-      : change.entity === "project"
-        ? await readProject(env, user.id, change.id)
-        : change.entity === "tag"
-          ? await readTag(env, user.id, change.id)
-          : change.entity === "task_tag"
-            ? await readTaskTag(env, user.id, change.id)
-            : await readSettings(env, user);
-    const fallback = change.entity === "task" ? defaultTask(change.id, now)
-      : change.entity === "project" ? defaultProject(change.id)
-        : change.entity === "tag" ? defaultTag(change.id)
-          : change.entity === "task_tag" ? defaultTaskTag(change.id) : defaultSettings();
+    const updatedCurrent =
+      change.entity === "task"
+        ? await readTask(env, user.id, change.id)
+        : change.entity === "project"
+          ? await readProject(env, user.id, change.id)
+          : change.entity === "tag"
+            ? await readTag(env, user.id, change.id)
+            : change.entity === "task_tag"
+              ? await readTaskTag(env, user.id, change.id)
+              : await readSettings(env, user);
+    const fallback =
+      change.entity === "task"
+        ? defaultTask(change.id, now)
+        : change.entity === "project"
+          ? defaultProject(change.id)
+          : change.entity === "tag"
+            ? defaultTag(change.id)
+            : change.entity === "task_tag"
+              ? defaultTaskTag(change.id)
+              : defaultSettings();
     return {
       rejected: {
         change_id: change.change_id,
         entity: change.entity,
         id: change.id,
-        reason: requestedFields.every((field) => !(field in changedFields)) ? "no_fields_applied" : "field_conflict",
+        reason: requestedFields.every((field) => !(field in changedFields))
+          ? "no_fields_applied"
+          : "field_conflict",
         current: { entity: change.entity, ...(updatedCurrent ?? fallback) } as SyncRow,
       } as RejectedChange,
     };
@@ -1598,7 +1853,9 @@ export async function handleSyncRequest(
   } catch {
     return { status: 400, body: { error: "invalid_request" } };
   }
-  const currentUser = await env.DB.prepare("SELECT seq_counter, tombstone_floor_seq FROM users WHERE id = ?")
+  const currentUser = await env.DB.prepare(
+    "SELECT seq_counter, tombstone_floor_seq FROM users WHERE id = ?",
+  )
     .bind(user.id)
     .first<{ seq_counter: number; tombstone_floor_seq: number }>();
   if (!currentUser || request.since > currentUser.seq_counter) {
@@ -1634,7 +1891,9 @@ export async function handleSyncRequest(
       if (result.rejected) rejected.push(result.rejected);
       if (result.tombstone) immediateTombstones.push(result.tombstone);
     }
-    const updatedUser = await env.DB.prepare("SELECT seq_counter, tombstone_floor_seq FROM users WHERE id = ?")
+    const updatedUser = await env.DB.prepare(
+      "SELECT seq_counter, tombstone_floor_seq FROM users WHERE id = ?",
+    )
       .bind(user.id)
       .first<{ seq_counter: number; tombstone_floor_seq: number }>();
     if (!updatedUser) throw new Error("Authenticated user missing from database");
@@ -1715,32 +1974,46 @@ export async function handleSyncRequest(
   for (const item of selected) {
     if (item.kind === "tombstone") {
       if (item.purged_at !== null) {
-        pulledTombstones.push({ entity: item.entity as Tombstone["entity"], id: item.id, seq: item.seq, purged_at: item.purged_at });
+        pulledTombstones.push({
+          entity: item.entity as Tombstone["entity"],
+          id: item.id,
+          seq: item.seq,
+          purged_at: item.purged_at,
+        });
       }
       continue;
     }
     if (!item.payload) continue;
     const value: unknown = JSON.parse(item.payload);
     if (!isRecord(value)) continue;
-    if (item.entity === "task") rows.push({ entity: "task", ...(value as unknown as Task), done: value.done === 1 });
-    else if (item.entity === "project") rows.push({ entity: "project", ...(value as unknown as Project) });
+    if (item.entity === "task")
+      rows.push({ entity: "task", ...(value as unknown as Task), done: value.done === 1 });
+    else if (item.entity === "project")
+      rows.push({ entity: "project", ...(value as unknown as Project) });
     else if (item.entity === "tag") rows.push({ entity: "tag", ...(value as unknown as Tag) });
-    else if (item.entity === "task_tag") rows.push({ entity: "task_tag", ...(value as unknown as TaskTag), active: value.active === 1 });
-    else if (item.entity === "settings") rows.push({ entity: "settings", ...(value as unknown as UserSettingsState) });
+    else if (item.entity === "task_tag")
+      rows.push({
+        entity: "task_tag",
+        ...(value as unknown as TaskTag),
+        active: value.active === 1,
+      });
+    else if (item.entity === "settings")
+      rows.push({ entity: "settings", ...(value as unknown as UserSettingsState) });
   }
   const tombstoneMap = new Map<string, Tombstone>();
   for (const tombstone of [...pulledTombstones, ...immediateTombstones]) {
     tombstoneMap.set(`${tombstone.entity}:${tombstone.id}`, tombstone);
   }
   const last = selected.at(-1);
-  const nextPage = hasMore && last
-    ? encodePageToken({
-        since: request.since,
-        upto,
-        full: fullResync,
-        cursor: { seq: last.seq, entity: last.entity, id: last.id },
-      })
-    : undefined;
+  const nextPage =
+    hasMore && last
+      ? encodePageToken({
+          since: request.since,
+          upto,
+          full: fullResync,
+          cursor: { seq: last.seq, entity: last.entity, id: last.id },
+        })
+      : undefined;
   return {
     status: 200,
     body: {
@@ -1772,7 +2045,8 @@ export async function updateSettings(
     return { status: 400, body: { error: "invalid_request" } };
   }
   const result = await applyChange(env, user, change);
-  if (result.rejected) return { status: 409, body: { error: "change_rejected", rejected: result.rejected } };
+  if (result.rejected)
+    return { status: 409, body: { error: "change_rejected", rejected: result.rejected } };
   return { status: 200, body: await readSettings(env, user) };
 }
 
@@ -1790,13 +2064,19 @@ async function taskTagDeactivationStatements(
   const column = target.entity === "task" ? "task_id" : "tag_id";
   const rows = await env.DB.prepare(
     `SELECT id, active, field_ts FROM task_tags WHERE user_id = ? AND ${column} = ? AND active = 1`,
-  ).bind(userId, target.id).all<{ id: string; active: number; field_ts: string }>();
+  )
+    .bind(userId, target.id)
+    .all<{ id: string; active: number; field_ts: string }>();
   const statements: D1PreparedStatement[] = [];
   for (const row of rows.results) {
     const current = parseFieldTs<TaskTagFields>(row.field_ts).active;
     const hlc = nextHlc("server", Date.parse(now), current ?? null);
-    statements.push(env.DB.prepare("UPDATE users SET seq_counter = seq_counter + 1 WHERE id = ?").bind(userId));
-    statements.push(updateVersionedRow(env, "task_tags", userId, row.id, { active: { v: false, hlc } }));
+    statements.push(
+      env.DB.prepare("UPDATE users SET seq_counter = seq_counter + 1 WHERE id = ?").bind(userId),
+    );
+    statements.push(
+      updateVersionedRow(env, "task_tags", userId, row.id, { active: { v: false, hlc } }),
+    );
   }
   return statements;
 }
@@ -1820,28 +2100,43 @@ export async function purgeTrashEntity(
   const table = entity === "task" ? "tasks" : entity === "project" ? "projects" : "tags";
   const changeId = body.change_id;
   const id = body.id;
-  const requestedBatchId = entity === "project" ? body.batch_id as string | null | undefined : undefined;
+  const requestedBatchId =
+    entity === "project" ? (body.batch_id as string | null | undefined) : undefined;
   if (await wasApplied(env, user.id, changeId)) return { status: 200, body: { ok: true } };
 
   const selected = await env.DB.prepare(
     `SELECT deleted_at, ${entity === "tag" ? "NULL" : "deleted_batch_id"} AS deleted_batch_id FROM ${table} WHERE user_id = ? AND id = ?`,
-  ).bind(user.id, id).first<{ deleted_at: string | null; deleted_batch_id: string | null }>();
+  )
+    .bind(user.id, id)
+    .first<{ deleted_at: string | null; deleted_batch_id: string | null }>();
   if (selected?.deleted_at === null) return { status: 409, body: { error: "not_in_trash" } };
-  if (selected && requestedBatchId !== undefined && requestedBatchId !== selected.deleted_batch_id) {
+  if (
+    selected &&
+    requestedBatchId !== undefined &&
+    requestedBatchId !== selected.deleted_batch_id
+  ) {
     return { status: 409, body: { error: "trash_batch_changed" } };
   }
-  if (!selected && (entity !== "project" || !requestedBatchId || !(await getTombstone(env, user.id, "project", id)))) {
+  if (
+    !selected &&
+    (entity !== "project" ||
+      !requestedBatchId ||
+      !(await getTombstone(env, user.id, "project", id)))
+  ) {
     await env.DB.batch([appliedChangeStatement(env, user.id, changeId, new Date().toISOString())]);
     return { status: 200, body: { ok: true } };
   }
   const batchId = selected?.deleted_batch_id ?? requestedBatchId ?? null;
-  const targetRows: { entity: "task" | "project" | "tag"; id: string; batchId: string | null }[] = [];
+  const targetRows: { entity: "task" | "project" | "tag"; id: string; batchId: string | null }[] =
+    [];
   if (entity === "project" && batchId !== null) {
     for (const target of ["project", "task"] as const) {
       const targetTable = target === "project" ? "projects" : "tasks";
       const rows = await env.DB.prepare(
         `SELECT id FROM ${targetTable} WHERE user_id = ? AND deleted_at IS NOT NULL AND deleted_batch_id = ? ORDER BY id`,
-      ).bind(user.id, batchId).all<{ id: string }>();
+      )
+        .bind(user.id, batchId)
+        .all<{ id: string }>();
       targetRows.push(...rows.results.map((row) => ({ entity: target, id: row.id, batchId })));
     }
   } else {
@@ -1849,8 +2144,12 @@ export async function purgeTrashEntity(
     if (entity === "task" && batchId !== null) {
       const children = await env.DB.prepare(
         "SELECT id FROM tasks WHERE user_id = ? AND parent_task_id = ? AND deleted_at IS NOT NULL AND deleted_batch_id = ? ORDER BY id",
-      ).bind(user.id, id, batchId).all<{ id: string }>();
-      targetRows.push(...children.results.map((row) => ({ entity: "task" as const, id: row.id, batchId })));
+      )
+        .bind(user.id, id, batchId)
+        .all<{ id: string }>();
+      targetRows.push(
+        ...children.results.map((row) => ({ entity: "task" as const, id: row.id, batchId })),
+      );
     }
   }
 
@@ -1859,29 +2158,50 @@ export async function purgeTrashEntity(
     const chunk = targetRows.slice(offset, offset + 30);
     const statements: D1PreparedStatement[] = [];
     for (const target of chunk) {
-      statements.push(...await taskTagDeactivationStatements(env, user.id, target, purgedAt));
-      const targetTable = target.entity === "task" ? "tasks" : target.entity === "project" ? "projects" : "tags";
-      const trashCondition = target.entity === "tag" ? "deleted_at IS NOT NULL" : "deleted_at IS NOT NULL AND deleted_batch_id IS ?";
+      statements.push(...(await taskTagDeactivationStatements(env, user.id, target, purgedAt)));
+      const targetTable =
+        target.entity === "task" ? "tasks" : target.entity === "project" ? "projects" : "tags";
+      const trashCondition =
+        target.entity === "tag"
+          ? "deleted_at IS NOT NULL"
+          : "deleted_at IS NOT NULL AND deleted_batch_id IS ?";
       const trashValues = target.entity === "tag" ? [] : [target.batchId];
-      statements.push(env.DB.prepare(
-        `UPDATE users SET seq_counter = seq_counter + 1 WHERE id = ? AND EXISTS (
+      statements.push(
+        env.DB.prepare(
+          `UPDATE users SET seq_counter = seq_counter + 1 WHERE id = ? AND EXISTS (
           SELECT 1 FROM ${targetTable} WHERE user_id = ? AND id = ? AND ${trashCondition}
         )`,
-      ).bind(user.id, user.id, target.id, ...trashValues));
-      statements.push(env.DB.prepare(
-        `INSERT INTO tombstones (user_id, entity, id, purged_at, seq)
+        ).bind(user.id, user.id, target.id, ...trashValues),
+      );
+      statements.push(
+        env.DB.prepare(
+          `INSERT INTO tombstones (user_id, entity, id, purged_at, seq)
          SELECT ?, ?, ?, ?, seq_counter FROM users WHERE id = ? AND EXISTS (
            SELECT 1 FROM ${targetTable} WHERE user_id = ? AND id = ? AND ${trashCondition}
          ) ON CONFLICT(user_id, entity, id) DO UPDATE SET purged_at = excluded.purged_at, seq = excluded.seq`,
-      ).bind(user.id, target.entity, target.id, purgedAt, user.id, user.id, target.id, ...trashValues));
-      statements.push(env.DB.prepare(
-        `DELETE FROM ${targetTable} WHERE user_id = ? AND id = ? AND ${trashCondition}`,
-      ).bind(user.id, target.id, ...trashValues));
+        ).bind(
+          user.id,
+          target.entity,
+          target.id,
+          purgedAt,
+          user.id,
+          user.id,
+          target.id,
+          ...trashValues,
+        ),
+      );
+      statements.push(
+        env.DB.prepare(
+          `DELETE FROM ${targetTable} WHERE user_id = ? AND id = ? AND ${trashCondition}`,
+        ).bind(user.id, target.id, ...trashValues),
+      );
     }
-    if (offset + chunk.length === targetRows.length) statements.push(appliedChangeStatement(env, user.id, changeId, purgedAt));
+    if (offset + chunk.length === targetRows.length)
+      statements.push(appliedChangeStatement(env, user.id, changeId, purgedAt));
     await env.DB.batch(statements);
   }
-  if (targetRows.length === 0) await env.DB.batch([appliedChangeStatement(env, user.id, changeId, purgedAt)]);
+  if (targetRows.length === 0)
+    await env.DB.batch([appliedChangeStatement(env, user.id, changeId, purgedAt)]);
   return { status: 200, body: { ok: true } };
 }
 
@@ -1902,7 +2222,14 @@ export async function purgeExpiredData(env: SyncEnv, now = new Date()): Promise<
       const chunk = expired.results.slice(offset, offset + 30);
       const statements: D1PreparedStatement[] = [];
       for (const row of chunk) {
-        statements.push(...await taskTagDeactivationStatements(env, row.user_id, { entity, id: row.id }, purgedAt));
+        statements.push(
+          ...(await taskTagDeactivationStatements(
+            env,
+            row.user_id,
+            { entity, id: row.id },
+            purgedAt,
+          )),
+        );
         statements.push(
           env.DB.prepare(
             `UPDATE users SET seq_counter = seq_counter + 1
@@ -1915,9 +2242,22 @@ export async function purgeExpiredData(env: SyncEnv, now = new Date()): Promise<
              SELECT ?, ?, ?, ?, seq_counter FROM users WHERE id = ?
                AND EXISTS (SELECT 1 FROM ${table} WHERE user_id = ? AND id = ? AND deleted_at < ?)
              ON CONFLICT(user_id, entity, id) DO UPDATE SET purged_at = excluded.purged_at, seq = excluded.seq`,
-          ).bind(row.user_id, entity, row.id, purgedAt, row.user_id, row.user_id, row.id, deletedCutoff),
+          ).bind(
+            row.user_id,
+            entity,
+            row.id,
+            purgedAt,
+            row.user_id,
+            row.user_id,
+            row.id,
+            deletedCutoff,
+          ),
         );
-        statements.push(env.DB.prepare(`DELETE FROM ${table} WHERE user_id = ? AND id = ? AND deleted_at < ?`).bind(row.user_id, row.id, deletedCutoff));
+        statements.push(
+          env.DB.prepare(
+            `DELETE FROM ${table} WHERE user_id = ? AND id = ? AND deleted_at < ?`,
+          ).bind(row.user_id, row.id, deletedCutoff),
+        );
       }
       await env.DB.batch(statements);
     }
@@ -1936,7 +2276,11 @@ export async function purgeExpiredData(env: SyncEnv, now = new Date()): Promise<
 
 export async function requestBody(request: Request): Promise<unknown> {
   const contentLength = request.headers.get("content-length");
-  if (contentLength !== null && /^\d+$/.test(contentLength) && Number(contentLength) > MAX_REQUEST_BODY_BYTES) {
+  if (
+    contentLength !== null &&
+    /^\d+$/.test(contentLength) &&
+    Number(contentLength) > MAX_REQUEST_BODY_BYTES
+  ) {
     throw new RangeError("request too large");
   }
 

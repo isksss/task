@@ -82,7 +82,9 @@ export function decodeBase64Url(value: string): Uint8Array | null {
   if (!/^[A-Za-z0-9_-]+$/.test(value)) return null;
   try {
     const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
-    return Uint8Array.from(atob(base64 + "=".repeat((4 - (base64.length % 4)) % 4)), (char) => char.charCodeAt(0));
+    return Uint8Array.from(atob(base64 + "=".repeat((4 - (base64.length % 4)) % 4)), (char) =>
+      char.charCodeAt(0),
+    );
   } catch {
     return null;
   }
@@ -102,13 +104,20 @@ function concatBytes(...parts: Uint8Array[]): Uint8Array {
   return result;
 }
 
-async function hkdf(ikm: Uint8Array, salt: Uint8Array, info: Uint8Array, length: number): Promise<Uint8Array> {
+async function hkdf(
+  ikm: Uint8Array,
+  salt: Uint8Array,
+  info: Uint8Array,
+  length: number,
+): Promise<Uint8Array> {
   const key = await crypto.subtle.importKey("raw", bufferOf(ikm), "HKDF", false, ["deriveBits"]);
-  return new Uint8Array(await crypto.subtle.deriveBits(
-    { name: "HKDF", hash: "SHA-256", salt: bufferOf(salt), info: bufferOf(info) },
-    key,
-    length * 8,
-  ));
+  return new Uint8Array(
+    await crypto.subtle.deriveBits(
+      { name: "HKDF", hash: "SHA-256", salt: bufferOf(salt), info: bufferOf(info) },
+      key,
+      length * 8,
+    ),
+  );
 }
 
 export async function encryptWebPushPayload(
@@ -127,17 +136,17 @@ export async function encryptWebPushPayload(
     false,
     [],
   );
-  const ephemeral = options.ephemeralKeyPair ?? await crypto.subtle.generateKey(
-    { name: "ECDH", namedCurve: "P-256" },
-    true,
-    ["deriveBits"],
-  ) as CryptoKeyPair;
-  const ephemeralPublicKey = new Uint8Array(await crypto.subtle.exportKey("raw", ephemeral.publicKey));
-  const ecdhSecret = new Uint8Array(await crypto.subtle.deriveBits(
-    { name: "ECDH", public: userKey },
-    ephemeral.privateKey,
-    256,
-  ));
+  const ephemeral =
+    options.ephemeralKeyPair ??
+    ((await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, [
+      "deriveBits",
+    ])) as CryptoKeyPair);
+  const ephemeralPublicKey = new Uint8Array(
+    await crypto.subtle.exportKey("raw", ephemeral.publicKey),
+  );
+  const ecdhSecret = new Uint8Array(
+    await crypto.subtle.deriveBits({ name: "ECDH", public: userKey }, ephemeral.privateKey, 256),
+  );
   const keyInfo = concatBytes(
     new TextEncoder().encode("WebPush: info\0"),
     userPublicKey,
@@ -146,22 +155,33 @@ export async function encryptWebPushPayload(
   const ikm = await hkdf(ecdhSecret, authSecret, keyInfo, 32);
   const salt = options.salt ?? crypto.getRandomValues(new Uint8Array(16));
   if (salt.byteLength !== 16) throw new RangeError("Web Push salt must contain 16 bytes");
-  const contentKey = await hkdf(ikm, salt, new TextEncoder().encode("Content-Encoding: aes128gcm\0"), 16);
+  const contentKey = await hkdf(
+    ikm,
+    salt,
+    new TextEncoder().encode("Content-Encoding: aes128gcm\0"),
+    16,
+  );
   const nonce = await hkdf(ikm, salt, new TextEncoder().encode("Content-Encoding: nonce\0"), 12);
   const plaintext = concatBytes(new TextEncoder().encode(payload), new Uint8Array([2]));
-  const cipherText = new Uint8Array(await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv: bufferOf(nonce), tagLength: 128 },
-    await crypto.subtle.importKey("raw", bufferOf(contentKey), "AES-GCM", false, ["encrypt"]),
-    bufferOf(plaintext),
-  ));
+  const cipherText = new Uint8Array(
+    await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv: bufferOf(nonce), tagLength: 128 },
+      await crypto.subtle.importKey("raw", bufferOf(contentKey), "AES-GCM", false, ["encrypt"]),
+      bufferOf(plaintext),
+    ),
+  );
   return concatBytes(salt, new Uint8Array([0, 0, 16, 0, 65]), ephemeralPublicKey, cipherText);
 }
 
 async function importVapidMaterial(jwk: JsonWebKey): Promise<VapidMaterial> {
   if (
-    jwk.kty !== "EC" || jwk.crv !== "P-256" ||
-    typeof jwk.x !== "string" || typeof jwk.y !== "string" || typeof jwk.d !== "string"
-  ) throw new TypeError("VAPID key must be a P-256 private JWK");
+    jwk.kty !== "EC" ||
+    jwk.crv !== "P-256" ||
+    typeof jwk.x !== "string" ||
+    typeof jwk.y !== "string" ||
+    typeof jwk.d !== "string"
+  )
+    throw new TypeError("VAPID key must be a P-256 private JWK");
   const x = decodeBase64Url(jwk.x);
   const y = decodeBase64Url(jwk.y);
   const d = decodeBase64Url(jwk.d);
@@ -197,24 +217,35 @@ export async function getVapidPublicKey(env: PushEnv): Promise<string | null> {
   return material ? base64Url(material.publicKey) : null;
 }
 
-async function signVapidJwt(endpoint: string, material: VapidMaterial, now: number): Promise<string> {
+async function signVapidJwt(
+  endpoint: string,
+  material: VapidMaterial,
+  now: number,
+): Promise<string> {
   const url = new URL(endpoint);
-  if (url.protocol !== "https:" || url.username || url.password) throw new TypeError("Invalid Web Push endpoint");
+  if (url.protocol !== "https:" || url.username || url.password)
+    throw new TypeError("Invalid Web Push endpoint");
   const encodeJson = (value: unknown) => base64Url(new TextEncoder().encode(JSON.stringify(value)));
   const unsigned = `${encodeJson({ typ: "JWT", alg: "ES256" })}.${encodeJson({
     aud: url.origin,
     exp: Math.floor(now / 1000) + 12 * 60 * 60,
     sub: SUBJECT,
   })}`;
-  const signature = new Uint8Array(await crypto.subtle.sign(
-    { name: "ECDSA", hash: "SHA-256" },
-    material.privateKey,
-    new TextEncoder().encode(unsigned),
-  ));
+  const signature = new Uint8Array(
+    await crypto.subtle.sign(
+      { name: "ECDSA", hash: "SHA-256" },
+      material.privateKey,
+      new TextEncoder().encode(unsigned),
+    ),
+  );
   return `${unsigned}.${base64Url(signature)}`;
 }
 
-export async function createVapidJwt(endpoint: string, jwk: JsonWebKey, now = Date.now()): Promise<string> {
+export async function createVapidJwt(
+  endpoint: string,
+  jwk: JsonWebKey,
+  now = Date.now(),
+): Promise<string> {
   return signVapidJwt(endpoint, await importVapidMaterial(jwk), now);
 }
 
@@ -228,7 +259,12 @@ export function parsePushEndpoint(value: unknown): string | null {
   if (typeof value !== "string" || value.length > 2048) return null;
   try {
     const endpoint = new URL(value);
-    return endpoint.protocol === "https:" && !endpoint.username && !endpoint.password && !endpoint.hash ? value : null;
+    return endpoint.protocol === "https:" &&
+      !endpoint.username &&
+      !endpoint.password &&
+      !endpoint.hash
+      ? value
+      : null;
   } catch {
     return null;
   }
@@ -240,12 +276,31 @@ export async function parsePushSubscription(value: unknown): Promise<ParsedSubsc
   if (!endpoint) return null;
   const p256dh = value.keys.p256dh;
   const auth = value.keys.auth;
-  if (typeof p256dh !== "string" || p256dh.length !== 87 || typeof auth !== "string" || auth.length !== 22) return null;
+  if (
+    typeof p256dh !== "string" ||
+    p256dh.length !== 87 ||
+    typeof auth !== "string" ||
+    auth.length !== 22
+  )
+    return null;
   const publicKey = decodeBase64Url(p256dh);
   const authSecret = decodeBase64Url(auth);
-  if (!publicKey || publicKey.byteLength !== 65 || publicKey[0] !== 4 || !authSecret || authSecret.byteLength !== 16) return null;
+  if (
+    !publicKey ||
+    publicKey.byteLength !== 65 ||
+    publicKey[0] !== 4 ||
+    !authSecret ||
+    authSecret.byteLength !== 16
+  )
+    return null;
   try {
-    await crypto.subtle.importKey("raw", bufferOf(publicKey), { name: "ECDH", namedCurve: "P-256" }, false, []);
+    await crypto.subtle.importKey(
+      "raw",
+      bufferOf(publicKey),
+      { name: "ECDH", namedCurve: "P-256" },
+      false,
+      [],
+    );
   } catch {
     return null;
   }
@@ -269,7 +324,9 @@ async function collectSlots(env: PushEnv, now: Date): Promise<NotificationSlot[]
        AND t.due_date BETWEEN ? AND ?
        AND EXISTS (SELECT 1 FROM push_subscriptions s WHERE s.user_id = t.user_id)
      ORDER BY t.due_date, t.due_time, t.id`,
-  ).bind(localDateOffset(now, -1), localDateOffset(now, 1)).all<PushTaskRow>();
+  )
+    .bind(localDateOffset(now, -1), localDateOffset(now, 1))
+    .all<PushTaskRow>();
   const slots: NotificationSlot[] = [];
   for (const task of taskRows.results) {
     try {
@@ -300,21 +357,28 @@ async function collectSlots(env: PushEnv, now: Date): Promise<NotificationSlot[]
       const count = await env.DB.prepare(
         `SELECT COUNT(*) AS count FROM tasks
          WHERE user_id = ? AND done = 0 AND deleted_at IS NULL AND due_date = ? AND due_time IS NULL`,
-      ).bind(user.id, today).first<{ count: number }>();
+      )
+        .bind(user.id, today)
+        .first<{ count: number }>();
       if (!count || count.count === 0) continue;
       slots.push({
         userId: user.id,
         slotKey: `digest:${today}`,
         dueAt: digestAt,
         title: "task",
-        body: user.locale === "ja" ? `今日のタスク ${count.count} 件` : `You have ${count.count} tasks due today.`,
+        body:
+          user.locale === "ja"
+            ? `今日のタスク ${count.count} 件`
+            : `You have ${count.count} tasks due today.`,
         url: "/",
       });
     } catch (error) {
       console.error("Invalid daily digest time", user.id, error);
     }
   }
-  return slots.sort((a, b) => a.dueAt - b.dueAt || (a.slotKey < b.slotKey ? -1 : a.slotKey > b.slotKey ? 1 : 0));
+  return slots.sort(
+    (a, b) => a.dueAt - b.dueAt || (a.slotKey < b.slotKey ? -1 : a.slotKey > b.slotKey ? 1 : 0),
+  );
 }
 
 export async function sendDuePushNotifications(env: PushEnv, now = new Date()): Promise<void> {
@@ -332,14 +396,20 @@ export async function sendDuePushNotifications(env: PushEnv, now = new Date()): 
     for (const userId of userIds) {
       const rows = await env.DB.prepare(
         "SELECT id, user_id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ? ORDER BY created_at, id",
-      ).bind(userId).all<PushSubscriptionRow>();
+      )
+        .bind(userId)
+        .all<PushSubscriptionRow>();
       subscriptions.push(...rows.results);
     }
     const cutoff = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString();
     const logged = await env.DB.prepare(
       "SELECT subscription_id, slot_key FROM notification_log WHERE sent_at >= ?",
-    ).bind(cutoff).all<{ subscription_id: string; slot_key: string }>();
-    const alreadySent = new Set(logged.results.map(({ subscription_id, slot_key }) => `${subscription_id}:${slot_key}`));
+    )
+      .bind(cutoff)
+      .all<{ subscription_id: string; slot_key: string }>();
+    const alreadySent = new Set(
+      logged.results.map(({ subscription_id, slot_key }) => `${subscription_id}:${slot_key}`),
+    );
     const byUser = new Map<string, PushSubscriptionRow[]>();
     for (const subscription of subscriptions) {
       const list = byUser.get(subscription.user_id) ?? [];
@@ -358,51 +428,60 @@ export async function sendDuePushNotifications(env: PushEnv, now = new Date()): 
     }
 
     for (let offset = 0; offset < deliveries.length; offset += SEND_CONCURRENCY) {
-      await Promise.all(deliveries.slice(offset, offset + SEND_CONCURRENCY).map(async (delivery) => {
-        const publicKey = decodeBase64Url(delivery.subscription.p256dh);
-        const authSecret = decodeBase64Url(delivery.subscription.auth);
-        if (!publicKey || !authSecret) return;
-        try {
-          const jwt = await signVapidJwt(delivery.subscription.endpoint, material, now.getTime());
-          const body = await encryptWebPushPayload(JSON.stringify({
-            title: delivery.slot.title,
-            body: delivery.slot.body,
-            url: delivery.slot.url,
-          }), publicKey, authSecret);
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 10_000);
-          let response: Response;
+      await Promise.all(
+        deliveries.slice(offset, offset + SEND_CONCURRENCY).map(async (delivery) => {
+          const publicKey = decodeBase64Url(delivery.subscription.p256dh);
+          const authSecret = decodeBase64Url(delivery.subscription.auth);
+          if (!publicKey || !authSecret) return;
           try {
-            response = await fetch(delivery.subscription.endpoint, {
-              method: "POST",
-              redirect: "manual",
-              signal: controller.signal,
-              headers: {
-                Authorization: `vapid t=${jwt}, k=${base64Url(material.publicKey)}`,
-                "Content-Encoding": "aes128gcm",
-                "Content-Type": "application/octet-stream",
-                TTL: "3600",
-                Urgency: "normal",
-              },
-              body: bufferOf(body),
-            });
-          } finally {
-            clearTimeout(timeout);
+            const jwt = await signVapidJwt(delivery.subscription.endpoint, material, now.getTime());
+            const body = await encryptWebPushPayload(
+              JSON.stringify({
+                title: delivery.slot.title,
+                body: delivery.slot.body,
+                url: delivery.slot.url,
+              }),
+              publicKey,
+              authSecret,
+            );
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 10_000);
+            let response: Response;
+            try {
+              response = await fetch(delivery.subscription.endpoint, {
+                method: "POST",
+                redirect: "manual",
+                signal: controller.signal,
+                headers: {
+                  Authorization: `vapid t=${jwt}, k=${base64Url(material.publicKey)}`,
+                  "Content-Encoding": "aes128gcm",
+                  "Content-Type": "application/octet-stream",
+                  TTL: "3600",
+                  Urgency: "normal",
+                },
+                body: bufferOf(body),
+              });
+            } finally {
+              clearTimeout(timeout);
+            }
+            if (response.status === 404 || response.status === 410) {
+              await env.DB.prepare("DELETE FROM push_subscriptions WHERE id = ?")
+                .bind(delivery.subscription.id)
+                .run();
+            } else if (response.ok) {
+              await env.DB.prepare(
+                "INSERT OR IGNORE INTO notification_log (subscription_id, slot_key, sent_at) VALUES (?, ?, ?)",
+              )
+                .bind(delivery.subscription.id, delivery.slot.slotKey, now.toISOString())
+                .run();
+            } else {
+              console.warn("Web Push service returned an error", response.status);
+            }
+          } catch (error) {
+            console.error("Web Push delivery failed", delivery.subscription.endpoint, error);
           }
-          if (response.status === 404 || response.status === 410) {
-            await env.DB.prepare("DELETE FROM push_subscriptions WHERE id = ?")
-              .bind(delivery.subscription.id).run();
-          } else if (response.ok) {
-            await env.DB.prepare(
-              "INSERT OR IGNORE INTO notification_log (subscription_id, slot_key, sent_at) VALUES (?, ?, ?)",
-            ).bind(delivery.subscription.id, delivery.slot.slotKey, now.toISOString()).run();
-          } else {
-            console.warn("Web Push service returned an error", response.status);
-          }
-        } catch (error) {
-          console.error("Web Push delivery failed", delivery.subscription.endpoint, error);
-        }
-      }));
+        }),
+      );
     }
   } catch (error) {
     console.error("Web Push cron failed", error);

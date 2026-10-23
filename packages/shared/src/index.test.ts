@@ -74,17 +74,11 @@ describe("HLC", () => {
     const serverNow = 100_000;
     const futureClock = hlc(400_001, 2, "a");
     const first = clampFutureHlc(futureClock, serverNow);
-    const afterFirst = mergeLww(
-      { title: "before" },
-      {},
-      { title: { v: "first", hlc: first } },
-    );
+    const afterFirst = mergeLww({ title: "before" }, {}, { title: { v: "first", hlc: first } });
     const second = clampFutureHlc(futureClock, serverNow, afterFirst.field_ts.title);
-    const afterSecond = mergeLww(
-      afterFirst.value,
-      afterFirst.field_ts,
-      { title: { v: "second", hlc: second } },
-    );
+    const afterSecond = mergeLww(afterFirst.value, afterFirst.field_ts, {
+      title: { v: "second", hlc: second },
+    });
 
     expect(second).toEqual(hlc(serverNow, 3, "a"));
     expect(afterSecond.value.title).toBe("second");
@@ -123,7 +117,10 @@ describe("field-level LWW", () => {
       },
     );
 
-    expect(merged.value).toEqual({ title: "edited after delete", deleted_at: "2024-01-02T00:00:00Z" });
+    expect(merged.value).toEqual({
+      title: "edited after delete",
+      deleted_at: "2024-01-02T00:00:00Z",
+    });
     expect(merged.field_ts.deleted_at).toEqual(hlc(30, 0, "a"));
   });
 });
@@ -135,8 +132,12 @@ describe("wall-clock date helpers", () => {
     expect(isTaskDueToday({ due_date: "2024-01-02" }, now, "Asia/Tokyo")).toBe(true);
     expect(isTaskDueToday({ due_date: "2024-01-02" }, now, "UTC")).toBe(false);
     expect(isTaskOverdue({ due_date: "2024-01-01", due_time: null }, now, "Asia/Tokyo")).toBe(true);
-    expect(isTaskOverdue({ due_date: "2024-01-02", due_time: "00:00" }, now, "Asia/Tokyo")).toBe(true);
-    expect(isTaskOverdue({ due_date: "2024-01-02", due_time: "01:00" }, now, "Asia/Tokyo")).toBe(false);
+    expect(isTaskOverdue({ due_date: "2024-01-02", due_time: "00:00" }, now, "Asia/Tokyo")).toBe(
+      true,
+    );
+    expect(isTaskOverdue({ due_date: "2024-01-02", due_time: "01:00" }, now, "Asia/Tokyo")).toBe(
+      false,
+    );
     expect(isTaskOverdue({ due_date: null, due_time: null }, now, "Asia/Tokyo")).toBe(false);
   });
 
@@ -156,8 +157,12 @@ describe("wall-clock date helpers", () => {
 describe("recurrence helpers", () => {
   it("computes daily and multi-weekday occurrences from the task's due date", () => {
     expect(nextRecurrenceDate("2024-12-31", { frequency: "daily" })).toBe("2025-01-01");
-    expect(nextRecurrenceDate("2024-01-01", { frequency: "weekly", weekdays: [1, 3] })).toBe("2024-01-03");
-    expect(nextRecurrenceDate("2024-01-03", { frequency: "weekly", weekdays: [1, 3] })).toBe("2024-01-08");
+    expect(nextRecurrenceDate("2024-01-01", { frequency: "weekly", weekdays: [1, 3] })).toBe(
+      "2024-01-03",
+    );
+    expect(nextRecurrenceDate("2024-01-03", { frequency: "weekly", weekdays: [1, 3] })).toBe(
+      "2024-01-08",
+    );
   });
 
   it("clamps monthly and yearly occurrences to the corresponding month end", () => {

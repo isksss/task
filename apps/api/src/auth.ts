@@ -106,7 +106,13 @@ export async function verifyAccessJwt(
   const header = decodeJsonSegment(parts[0]);
   const payload = decodeJsonSegment(parts[1]);
   const signature = decodeBase64Url(parts[2]);
-  if (!header || !payload || !signature || header.alg !== "RS256" || typeof header.kid !== "string") {
+  if (
+    !header ||
+    !payload ||
+    !signature ||
+    header.alg !== "RS256" ||
+    typeof header.kid !== "string"
+  ) {
     return null;
   }
 
@@ -116,7 +122,12 @@ export async function verifyAccessJwt(
     keys = await fetchKeys(team, true);
     jwk = keys?.find((key) => key !== null && typeof key === "object" && key.kid === header.kid);
   }
-  if (!jwk || jwk.kty !== "RSA" || (jwk.alg && jwk.alg !== "RS256") || (jwk.use && jwk.use !== "sig")) {
+  if (
+    !jwk ||
+    jwk.kty !== "RSA" ||
+    (jwk.alg && jwk.alg !== "RS256") ||
+    (jwk.use && jwk.use !== "sig")
+  ) {
     return null;
   }
 
@@ -131,7 +142,10 @@ export async function verifyAccessJwt(
     const validSignature = await crypto.subtle.verify(
       "RSASSA-PKCS1-v1_5",
       key,
-      signature.buffer.slice(signature.byteOffset, signature.byteOffset + signature.byteLength) as ArrayBuffer,
+      signature.buffer.slice(
+        signature.byteOffset,
+        signature.byteOffset + signature.byteLength,
+      ) as ArrayBuffer,
       new TextEncoder().encode(`${parts[0]}.${parts[1]}`),
     );
     const now = Math.floor(Date.now() / 1000);
@@ -166,10 +180,7 @@ export async function authenticate(
   env: AuthBindings,
 ): Promise<AuthIdentity | null> {
   const localMode = env.AUTH_MODE;
-  if (
-    (localMode === "development" || localMode === "test") &&
-    env.DEPLOYMENT_ENV === localMode
-  ) {
+  if ((localMode === "development" || localMode === "test") && env.DEPLOYMENT_ENV === localMode) {
     const email = (env.ALLOWED_EMAILS ?? "isksss.prp@gmail.com").split(",")[0].trim();
     return {
       sub: env.DEV_USER_SUB ?? `local-${localMode}-user`,
@@ -181,7 +192,10 @@ export async function authenticate(
   return token ? verifyAccessJwt(token, env) : null;
 }
 
-export async function findOrCreateUser(env: AuthBindings, identity: AuthIdentity): Promise<UserRow> {
+export async function findOrCreateUser(
+  env: AuthBindings,
+  identity: AuthIdentity,
+): Promise<UserRow> {
   await env.DB.prepare(
     `INSERT OR IGNORE INTO users
        (id, access_sub, email, timezone, locale, digest_time, field_ts, seq_counter, settings_seq)

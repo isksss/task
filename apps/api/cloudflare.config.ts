@@ -20,7 +20,11 @@ export default defineConfig(({ mode }) => {
         triggers.scheduled({ schedule: "0 0 * * *" }),
       ],
       env: {
-        DB: bindings.d1({ name: environment.databaseName, id: environment.databaseId, dev: { remote: false } }),
+        DB: bindings.d1({
+          name: environment.databaseName,
+          id: environment.databaseId,
+          dev: { remote: false },
+        }),
         ASSETS: bindings.assets(),
         DEPLOYMENT_ENV: bindings.text(environment.vars.DEPLOYMENT_ENV),
         AUTH_MODE: bindings.text(environment.vars.AUTH_MODE),

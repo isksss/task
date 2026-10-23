@@ -300,7 +300,10 @@ function makeUtcEpoch(
   return date.getTime();
 }
 
-function dateParts(formatter: Intl.DateTimeFormat, epoch: number): {
+function dateParts(
+  formatter: Intl.DateTimeFormat,
+  epoch: number,
+): {
   year: number;
   month: number;
   day: number;
@@ -311,7 +314,10 @@ function dateParts(formatter: Intl.DateTimeFormat, epoch: number): {
   return { year: Number(parts.year), month: Number(parts.month), day: Number(parts.day) };
 }
 
-function wallParts(formatter: Intl.DateTimeFormat, epoch: number): {
+function wallParts(
+  formatter: Intl.DateTimeFormat,
+  epoch: number,
+): {
   year: number;
   month: number;
   day: number;
@@ -362,7 +368,10 @@ export function todayInTimeZone(now: ClockInput, timeZone: string): string {
   return formatDate(dateParts(dateFormatter(timeZone), epochOf(now)));
 }
 
-function parseWallClock(date: string, time: string): {
+function parseWallClock(
+  date: string,
+  time: string,
+): {
   year: number;
   month: number;
   day: number;
@@ -511,13 +520,24 @@ export function isValidRecurrence(value: unknown): value is Recurrence {
   const recurrence = value as Record<string, unknown>;
   if (recurrence.frequency === "daily") return Object.keys(recurrence).length === 1;
   if (recurrence.frequency === "weekly") {
-    return Object.keys(recurrence).length === 2 && Array.isArray(recurrence.weekdays) &&
-      recurrence.weekdays.length > 0 && recurrence.weekdays.length <= 7 &&
-      recurrence.weekdays.every((day) => Number.isInteger(day) && Number(day) >= 1 && Number(day) <= 7) &&
-      new Set(recurrence.weekdays).size === recurrence.weekdays.length;
+    return (
+      Object.keys(recurrence).length === 2 &&
+      Array.isArray(recurrence.weekdays) &&
+      recurrence.weekdays.length > 0 &&
+      recurrence.weekdays.length <= 7 &&
+      recurrence.weekdays.every(
+        (day) => Number.isInteger(day) && Number(day) >= 1 && Number(day) <= 7,
+      ) &&
+      new Set(recurrence.weekdays).size === recurrence.weekdays.length
+    );
   }
   if (recurrence.frequency === "monthly") {
-    return Object.keys(recurrence).length === 2 && Number.isInteger(recurrence.day) && Number(recurrence.day) >= 1 && Number(recurrence.day) <= 31;
+    return (
+      Object.keys(recurrence).length === 2 &&
+      Number.isInteger(recurrence.day) &&
+      Number(recurrence.day) >= 1 &&
+      Number(recurrence.day) <= 31
+    );
   }
   return recurrence.frequency === "yearly" && Object.keys(recurrence).length === 1;
 }
@@ -527,7 +547,11 @@ function parseDateParts(value: string): [number, number, number] {
   if (!match) throw new RangeError("Expected date YYYY-MM-DD");
   const parts = [Number(match[1]), Number(match[2]), Number(match[3])] as [number, number, number];
   const date = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
-  if (date.getUTCFullYear() !== parts[0] || date.getUTCMonth() + 1 !== parts[1] || date.getUTCDate() !== parts[2]) {
+  if (
+    date.getUTCFullYear() !== parts[0] ||
+    date.getUTCMonth() + 1 !== parts[1] ||
+    date.getUTCDate() !== parts[2]
+  ) {
     throw new RangeError("Invalid date");
   }
   return parts;
@@ -562,7 +586,11 @@ export function nextRecurrenceDate(dueDate: string, recurrence: Recurrence): str
   if (recurrence.frequency === "monthly") {
     const nextMonth = month === 12 ? 1 : month + 1;
     const nextYear = month === 12 ? year + 1 : year;
-    return formatWallDate(nextYear, nextMonth, Math.min(recurrence.day, monthLength(nextYear, nextMonth)));
+    return formatWallDate(
+      nextYear,
+      nextMonth,
+      Math.min(recurrence.day, monthLength(nextYear, nextMonth)),
+    );
   }
   const nextYear = year + 1;
   return formatWallDate(nextYear, month, Math.min(day, monthLength(nextYear, month)));
@@ -571,7 +599,9 @@ export function nextRecurrenceDate(dueDate: string, recurrence: Recurrence): str
 /** Deterministic UUID shared by offline clients and the worker for a recurrence occurrence. */
 export async function recurringTaskId(taskId: string, dueDate: string): Promise<string> {
   parseDateParts(dueDate);
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${taskId}:${dueDate}`)));
+  const digest = new Uint8Array(
+    await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${taskId}:${dueDate}`)),
+  );
   digest[6] = (digest[6]! & 0x0f) | 0x50;
   digest[8] = (digest[8]! & 0x3f) | 0x80;
   const hex = [...digest.slice(0, 16)].map((byte) => byte.toString(16).padStart(2, "0")).join("");

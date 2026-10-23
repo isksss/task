@@ -13,7 +13,13 @@ describe("export download", () => {
     vi.useFakeTimers();
     const click = vi.fn();
     const remove = vi.fn();
-    const link = { click, remove, href: "", download: "", hidden: false } as unknown as HTMLAnchorElement;
+    const link = {
+      click,
+      remove,
+      href: "",
+      download: "",
+      hidden: false,
+    } as unknown as HTMLAnchorElement;
     const append = vi.fn();
     vi.stubGlobal("document", { createElement: vi.fn(() => link), body: { append } });
     vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:task-export");
@@ -41,7 +47,9 @@ describe("export download", () => {
 describe("export request", () => {
   it("waits for synchronization before fetching the export", async () => {
     const calls: string[] = [];
-    const sync = vi.fn(async () => { calls.push("sync"); });
+    const sync = vi.fn(async () => {
+      calls.push("sync");
+    });
     const response = new Response("{}", { headers: { "Content-Type": "application/json" } });
     const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => {
       calls.push("export");
@@ -63,19 +71,28 @@ describe("export request", () => {
 
 describe("authenticated API response", () => {
   it("uses manual redirects and marks an Access response as reauthentication", async () => {
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response("{}", {
-      headers: { "Content-Type": "application/json" },
-    }));
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response("{}", {
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
     await fetchApiResponse(fetcher, "/api/export", { method: "GET" });
-    expect(fetcher).toHaveBeenCalledWith("/api/export", expect.objectContaining({
-      credentials: "same-origin",
-      redirect: "manual",
-    }));
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/export",
+      expect.objectContaining({
+        credentials: "same-origin",
+        redirect: "manual",
+      }),
+    );
 
-    const unauthorized = vi.fn<typeof fetch>().mockResolvedValue(new Response("{}", {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    }));
-    await expect(fetchApiResponse(unauthorized, "/api/export")).rejects.toBeInstanceOf(ReauthenticationRequired);
+    const unauthorized = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response("{}", {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await expect(fetchApiResponse(unauthorized, "/api/export")).rejects.toBeInstanceOf(
+      ReauthenticationRequired,
+    );
   });
 });

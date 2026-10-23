@@ -123,8 +123,10 @@ export const ja = {
   exportOffline: "オフラインのため、エクスポートにはインターネット接続が必要です。",
   exportFailed: "エクスポートできませんでした。接続を確認して再試行してください。",
   clearDeviceData: "この端末のデータを消去",
-  confirmClearDeviceData: "この端末に保存されたタスク、設定、オフラインデータをすべて消去します。この操作は取り消せません。続行しますか？",
-  confirmClearDeviceDataPending: "未送信の変更が {count} 件あります。消去するとこれらの変更は失われます。この操作は取り消せません。続行しますか？",
+  confirmClearDeviceData:
+    "この端末に保存されたタスク、設定、オフラインデータをすべて消去します。この操作は取り消せません。続行しますか？",
+  confirmClearDeviceDataPending:
+    "未送信の変更が {count} 件あります。消去するとこれらの変更は失われます。この操作は取り消せません。続行しますか？",
 } as const;
 
 export type Translation = { [K in keyof typeof ja]: string };
@@ -252,8 +254,10 @@ export const en: Translation = {
   exportOffline: "An internet connection is required to export while offline.",
   exportFailed: "Could not export data. Check your connection and try again.",
   clearDeviceData: "Clear data on this device",
-  confirmClearDeviceData: "This permanently clears tasks, settings, and offline data stored on this device. Continue?",
-  confirmClearDeviceDataPending: "There are {count} unsent changes on this device. Clearing it will discard them. This cannot be undone. Continue?",
+  confirmClearDeviceData:
+    "This permanently clears tasks, settings, and offline data stored on this device. Continue?",
+  confirmClearDeviceDataPending:
+    "There are {count} unsent changes on this device. Clearing it will discard them. This cannot be undone. Continue?",
 };
 
 export function clearDeviceDataConfirmation(t: Translation, pendingChanges: number): string {

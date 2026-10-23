@@ -707,9 +707,18 @@
   font-size: 0.85rem;
 }
 
-.priority1 { color: var(--priority-low); background: var(--priority-low-bg); }
-.priority2 { color: var(--priority-medium); background: var(--priority-medium-bg); }
-.priority3 { color: var(--danger); background: var(--danger-soft); }
+.priority1 {
+  color: var(--priority-low);
+  background: var(--priority-low-bg);
+}
+.priority2 {
+  color: var(--priority-medium);
+  background: var(--priority-medium-bg);
+}
+.priority3 {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
 
 .textButton,
 .dangerButton,
@@ -815,9 +824,18 @@ button:disabled {
   font-size: 1rem;
 }
 
-.reauthBanner { color: var(--danger); background: var(--danger-soft); }
-.offlineBanner { color: var(--warning); background: var(--warning-soft); }
-.errorBanner { color: var(--danger); background: var(--danger-soft); }
+.reauthBanner {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+.offlineBanner {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+.errorBanner {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
 
 .modalBackdrop {
   position: fixed;
@@ -960,12 +978,28 @@ button:disabled {
 }
 
 @media (max-width: 900px) {
-  .sidebar { width: 220px; }
-  .main { margin-left: 220px; }
-  .content { padding-right: 24px; padding-left: 24px; }
-  .topbar { padding-right: 24px; padding-left: 24px; }
-  .contentHeader { align-items: flex-start; flex-direction: column; }
-  .listControls { width: 100%; justify-content: flex-start; }
+  .sidebar {
+    width: 220px;
+  }
+  .main {
+    margin-left: 220px;
+  }
+  .content {
+    padding-right: 24px;
+    padding-left: 24px;
+  }
+  .topbar {
+    padding-right: 24px;
+    padding-left: 24px;
+  }
+  .contentHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .listControls {
+    width: 100%;
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 640px) {
@@ -981,8 +1015,17 @@ button:disabled {
     padding: 0 8px;
     background: var(--surface);
   }
-  .mobileBrand { flex: 1; font-size: 1.15rem; font-weight: 600; }
-  .menuButton { width: 44px; height: 44px; padding: 0; font-size: 1.15rem; }
+  .mobileBrand {
+    flex: 1;
+    font-size: 1.15rem;
+    font-weight: 600;
+  }
+  .menuButton {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    font-size: 1.15rem;
+  }
   .sidebar {
     top: 56px;
     z-index: 30;
@@ -991,9 +1034,14 @@ button:disabled {
     transform: translateX(-105%);
     transition: transform 160ms ease-out;
   }
-  .sidebarOpen { transform: translateX(0); }
+  .sidebarOpen {
+    transform: translateX(0);
+  }
   .sidebar .navItem,
-  .sidebar .projectLink { min-height: 44px; padding: 0 10px; }
+  .sidebar .projectLink {
+    min-height: 44px;
+    padding: 0 10px;
+  }
   .backdrop {
     position: fixed;
     inset: 56px 0 0;
@@ -1002,58 +1050,159 @@ button:disabled {
     border: 0;
     background: rgb(10 15 20 / 36%);
   }
-  .main { margin-left: 0; }
-  .topbar { display: none; }
-  .content { padding: 24px 16px 48px; }
-  .contentHeader { align-items: flex-start; gap: 12px; margin-bottom: 14px; }
-  .contentHeader h1 { font-size: 1.25rem; }
-  .listControls { align-items: center; flex-wrap: wrap; gap: 6px; }
-  .completedToggle { min-height: 44px; white-space: normal; }
-  .sortControl { min-height: 44px; }
-  .sortControl select { min-height: 40px; }
-  .quickAdd { min-height: 48px; gap: 7px; padding-left: 8px; }
-  .quickAdd input { height: 36px; }
-  .quickAdd .smallPrimary { min-height: 44px; padding: 5px 8px; }
+  .main {
+    margin-left: 0;
+  }
+  .topbar {
+    display: none;
+  }
+  .content {
+    padding: 24px 16px 48px;
+  }
+  .contentHeader {
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .contentHeader h1 {
+    font-size: 1.25rem;
+  }
+  .listControls {
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .completedToggle {
+    min-height: 44px;
+    white-space: normal;
+  }
+  .sortControl {
+    min-height: 44px;
+  }
+  .sortControl select {
+    min-height: 40px;
+  }
+  .quickAdd {
+    min-height: 48px;
+    gap: 7px;
+    padding-left: 8px;
+  }
+  .quickAdd input {
+    height: 36px;
+  }
+  .quickAdd .smallPrimary {
+    min-height: 44px;
+    padding: 5px 8px;
+  }
   .taskList,
-  .subtaskList { grid-template-columns: minmax(0, 1fr); }
-  .taskRow { min-width: 0; min-height: 56px; align-items: center; flex-wrap: wrap; gap: 0 6px; padding: 5px 8px; }
-  .taskMain { width: auto; min-height: 44px; }
-  .taskTitle { min-width: 0; }
-  .taskMeta { width: auto; min-height: 44px; justify-content: flex-end; gap: 6px; }
+  .subtaskList {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .taskRow {
+    min-width: 0;
+    min-height: 56px;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0 6px;
+    padding: 5px 8px;
+  }
+  .taskMain {
+    width: auto;
+    min-height: 44px;
+  }
+  .taskTitle {
+    min-width: 0;
+  }
+  .taskMeta {
+    width: auto;
+    min-height: 44px;
+    justify-content: flex-end;
+    gap: 6px;
+  }
   .taskMeta .textButton,
   .taskMeta .dangerButton,
-  .taskMeta .iconButton { min-width: 44px; min-height: 44px; }
-  .taskMeta .due { margin-right: auto; }
+  .taskMeta .iconButton {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .taskMeta .due {
+    margin-right: auto;
+  }
   .subtaskGroup,
-  .subtaskRow { min-width: 0; }
-  .subtaskRow .taskMain { width: auto; min-height: 44px; }
-  .subtaskRow .taskMeta { width: auto; min-height: 44px; }
-  .projectTools { flex-wrap: wrap; gap: 5px; }
-  .projectTools span { flex-basis: 100%; margin-bottom: 4px; }
-  .fieldGrid { grid-template-columns: 1fr; gap: 0; }
-  .calendarToolbar { flex-wrap: wrap; }
-  .calendarToolbar h2 { order: -1; flex-basis: 100%; }
-  .calendarTable td { height: 58px; padding: 1px; }
-  .calendarDay { min-height: 54px; padding: 4px; }
-  .calendarCount { min-width: 18px; height: 18px; }
+  .subtaskRow {
+    min-width: 0;
+  }
+  .subtaskRow .taskMain {
+    width: auto;
+    min-height: 44px;
+  }
+  .subtaskRow .taskMeta {
+    width: auto;
+    min-height: 44px;
+  }
+  .projectTools {
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  .projectTools span {
+    flex-basis: 100%;
+    margin-bottom: 4px;
+  }
+  .fieldGrid {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .calendarToolbar {
+    flex-wrap: wrap;
+  }
+  .calendarToolbar h2 {
+    order: -1;
+    flex-basis: 100%;
+  }
+  .calendarTable td {
+    height: 58px;
+    padding: 1px;
+  }
+  .calendarDay {
+    min-height: 54px;
+    padding: 4px;
+  }
+  .calendarCount {
+    min-width: 18px;
+    height: 18px;
+  }
   .textButton,
   .dangerButton,
   .iconButton,
   .smallPrimary,
   .primaryButton,
   .calendarModes button,
-  .calendarModeActive { min-height: 44px; }
+  .calendarModeActive {
+    min-height: 44px;
+  }
   .newProjectForm input,
   .newProjectForm select,
   .editor input:not([type="checkbox"]),
   .editor textarea,
   .editor select,
   .settingsPanel select,
-  .settingsPanel input { min-height: 44px; }
-  .checkboxField { min-height: 44px; }
-  .reauthBanner, .offlineBanner, .errorBanner { align-items: flex-start; flex-direction: column; padding: 12px 16px; }
+  .settingsPanel input {
+    min-height: 44px;
+  }
+  .checkboxField {
+    min-height: 44px;
+  }
+  .reauthBanner,
+  .offlineBanner,
+  .errorBanner {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 12px 16px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sidebar { transition: none; }
+  .sidebar {
+    transition: none;
+  }
 }

@@ -62,7 +62,10 @@ app.post("/api/sync", async (c) => {
   try {
     body = await requestBody(c.req.raw);
   } catch (error) {
-    return c.json({ error: error instanceof RangeError ? "request_too_large" : "invalid_request" }, error instanceof RangeError ? 413 : 400);
+    return c.json(
+      { error: error instanceof RangeError ? "request_too_large" : "invalid_request" },
+      error instanceof RangeError ? 413 : 400,
+    );
   }
   try {
     const result = await handleSyncRequest(c.env as SyncEnv, c.get("user"), body);
@@ -85,8 +88,12 @@ app.get("/api/export", async (c) => {
         `SELECT id, parent_id, name, deleted_at, deleted_batch_id
          FROM projects WHERE user_id = ? ORDER BY name, id`,
       ).bind(userId),
-      c.env.DB.prepare("SELECT id, name, deleted_at FROM tags WHERE user_id = ? ORDER BY name, id").bind(userId),
-      c.env.DB.prepare("SELECT id, task_id, tag_id, active FROM task_tags WHERE user_id = ? ORDER BY task_id, tag_id").bind(userId),
+      c.env.DB.prepare(
+        "SELECT id, name, deleted_at FROM tags WHERE user_id = ? ORDER BY name, id",
+      ).bind(userId),
+      c.env.DB.prepare(
+        "SELECT id, task_id, tag_id, active FROM task_tags WHERE user_id = ? ORDER BY task_id, tag_id",
+      ).bind(userId),
       c.env.DB.prepare("SELECT timezone, locale, digest_time FROM users WHERE id = ?").bind(userId),
     ]);
     const tasks = taskRows.results as Array<{
@@ -112,28 +119,39 @@ app.get("/api/export", async (c) => {
       deleted_batch_id: string | null;
     }>;
     const tags = tagRows.results as Array<{ id: string; name: string; deleted_at: string | null }>;
-    const taskTags = taskTagRows.results as Array<{ id: string; task_id: string; tag_id: string; active: number }>;
-    const settings = settingsRows.results[0] as {
-      timezone: string;
-      locale: "ja" | "en";
-      digest_time: string;
-    } | undefined;
+    const taskTags = taskTagRows.results as Array<{
+      id: string;
+      task_id: string;
+      tag_id: string;
+      active: number;
+    }>;
+    const settings = settingsRows.results[0] as
+      | {
+          timezone: string;
+          locale: "ja" | "en";
+          digest_time: string;
+        }
+      | undefined;
     if (!settings) throw new Error("Authenticated user settings missing from database");
-    return c.json({
-      format: "task-export",
-      version: 2,
-      tasks: tasks.map(({ done, recurrence, ...task }) => ({
-        ...task,
-        done: done === 1,
-        recurrence: recurrence === null ? null : JSON.parse(recurrence),
-      })),
-      projects,
-      tags,
-      task_tags: taskTags.map(({ active, ...taskTag }) => ({ ...taskTag, active: active === 1 })),
-      settings,
-    }, 200, {
-      "Content-Disposition": `attachment; filename="task-export-${new Date().toISOString().slice(0, 10)}.json"`,
-    });
+    return c.json(
+      {
+        format: "task-export",
+        version: 2,
+        tasks: tasks.map(({ done, recurrence, ...task }) => ({
+          ...task,
+          done: done === 1,
+          recurrence: recurrence === null ? null : JSON.parse(recurrence),
+        })),
+        projects,
+        tags,
+        task_tags: taskTags.map(({ active, ...taskTag }) => ({ ...taskTag, active: active === 1 })),
+        settings,
+      },
+      200,
+      {
+        "Content-Disposition": `attachment; filename="task-export-${new Date().toISOString().slice(0, 10)}.json"`,
+      },
+    );
   } catch (error) {
     console.error("Export failed", error);
     return c.json({ error: "export_failed" }, 500);
@@ -145,7 +163,10 @@ app.post("/api/trash/purge", async (c) => {
   try {
     body = await requestBody(c.req.raw);
   } catch (error) {
-    return c.json({ error: error instanceof RangeError ? "request_too_large" : "invalid_request" }, error instanceof RangeError ? 413 : 400);
+    return c.json(
+      { error: error instanceof RangeError ? "request_too_large" : "invalid_request" },
+      error instanceof RangeError ? 413 : 400,
+    );
   }
   try {
     const result = await purgeTrashEntity(c.env as SyncEnv, c.get("user"), body);
@@ -166,7 +187,10 @@ app.post("/api/push/subscriptions", async (c) => {
   try {
     body = await requestBody(c.req.raw);
   } catch (error) {
-    return c.json({ error: error instanceof RangeError ? "request_too_large" : "invalid_request" }, error instanceof RangeError ? 413 : 400);
+    return c.json(
+      { error: error instanceof RangeError ? "request_too_large" : "invalid_request" },
+      error instanceof RangeError ? 413 : 400,
+    );
   }
   const subscription = await parsePushSubscription(body);
   if (!subscription) return c.json({ error: "invalid_request" }, 400);
@@ -176,7 +200,16 @@ app.post("/api/push/subscriptions", async (c) => {
        VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id,
          p256dh = excluded.p256dh, auth = excluded.auth`,
-    ).bind(crypto.randomUUID(), c.get("user").id, subscription.endpoint, subscription.p256dh, subscription.auth, new Date().toISOString()).run();
+    )
+      .bind(
+        crypto.randomUUID(),
+        c.get("user").id,
+        subscription.endpoint,
+        subscription.p256dh,
+        subscription.auth,
+        new Date().toISOString(),
+      )
+      .run();
     return c.json({ ok: true });
   } catch (error) {
     console.error("Push subscription save failed", error);
@@ -189,15 +222,20 @@ app.delete("/api/push/subscriptions", async (c) => {
   try {
     body = await requestBody(c.req.raw);
   } catch (error) {
-    return c.json({ error: error instanceof RangeError ? "request_too_large" : "invalid_request" }, error instanceof RangeError ? 413 : 400);
+    return c.json(
+      { error: error instanceof RangeError ? "request_too_large" : "invalid_request" },
+      error instanceof RangeError ? 413 : 400,
+    );
   }
-  const endpoint = body !== null && typeof body === "object" && !Array.isArray(body)
-    ? parsePushEndpoint((body as Record<string, unknown>).endpoint)
-    : null;
+  const endpoint =
+    body !== null && typeof body === "object" && !Array.isArray(body)
+      ? parsePushEndpoint((body as Record<string, unknown>).endpoint)
+      : null;
   if (!endpoint) return c.json({ error: "invalid_request" }, 400);
   try {
     await c.env.DB.prepare("DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint = ?")
-      .bind(c.get("user").id, endpoint).run();
+      .bind(c.get("user").id, endpoint)
+      .run();
     return c.json({ ok: true });
   } catch (error) {
     console.error("Push subscription delete failed", error);
@@ -219,7 +257,10 @@ app.put("/api/settings", async (c) => {
   try {
     body = await requestBody(c.req.raw);
   } catch (error) {
-    return c.json({ error: error instanceof RangeError ? "request_too_large" : "invalid_request" }, error instanceof RangeError ? 413 : 400);
+    return c.json(
+      { error: error instanceof RangeError ? "request_too_large" : "invalid_request" },
+      error instanceof RangeError ? 413 : 400,
+    );
   }
   try {
     const result = await updateSettings(c.env as SyncEnv, c.get("user"), body);

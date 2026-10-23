@@ -8,7 +8,9 @@ describe("i18n", () => {
 
   it("provides localized guidance for recurrence requirements", () => {
     expect(ja.weeklyRecurrenceRequiresWeekday).toContain("曜日を1つ以上選択");
-    expect(en.weeklyRecurrenceRequiresWeekday).toBe("Select at least one weekday for weekly recurrence.");
+    expect(en.weeklyRecurrenceRequiresWeekday).toBe(
+      "Select at least one weekday for weekly recurrence.",
+    );
     expect(ja.recurrenceRequiresDueDate).toContain("期限日が必要");
     expect(en.recurrenceRequiresDueDate).toBe("A due date is required to set a recurrence.");
   });

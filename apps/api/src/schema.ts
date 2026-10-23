@@ -22,7 +22,8 @@ export async function applySchema(db: D1Database): Promise<void> {
   for (const statement of migrationStatements(initialMigration)) {
     await db.prepare(statement).run();
   }
-  const v2Applied = await db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'task_tags'")
+  const v2Applied = await db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'task_tags'")
     .first<{ name: string }>();
   if (!v2Applied) {
     await db.batch(migrationStatements(v2Migration).map((statement) => db.prepare(statement)));

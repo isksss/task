@@ -9,7 +9,8 @@ async function openApp(page: Page): Promise<void> {
 }
 
 function taskRow(page: Page, title: string) {
-  return page.getByRole("list", { name: "すべて", exact: true })
+  return page
+    .getByRole("list", { name: "すべて", exact: true })
     .getByRole("listitem")
     .filter({ hasText: title });
 }
@@ -18,26 +19,45 @@ type ExpectedSyncValue = string | number | boolean | null | ((value: unknown) =>
 type ExpectedTaskChange = { id?: string; fields: Record<string, ExpectedSyncValue> };
 
 function waitForSyncResponse(page: Page, expected: ExpectedTaskChange, timeout = 10_000) {
-  return page.waitForResponse((response) => {
-    if (new URL(response.url()).pathname !== "/api/sync" || response.request().method() !== "POST") return false;
-    const body = response.request().postDataJSON() as {
-      changes?: Array<{ entity?: string; id?: string; fields?: Record<string, { v?: unknown }> }>;
-    };
-    return body.changes?.some((change) => change.entity === "task" &&
-      (expected.id === undefined || change.id === expected.id) &&
-      Object.entries(expected.fields).every(([field, value]) => {
-        const actual = change.fields?.[field]?.v;
-        return typeof value === "function" ? value(actual) : actual === value;
-      })) ?? false;
-  }, { timeout });
+  return page.waitForResponse(
+    (response) => {
+      if (
+        new URL(response.url()).pathname !== "/api/sync" ||
+        response.request().method() !== "POST"
+      )
+        return false;
+      const body = response.request().postDataJSON() as {
+        changes?: Array<{ entity?: string; id?: string; fields?: Record<string, { v?: unknown }> }>;
+      };
+      return (
+        body.changes?.some(
+          (change) =>
+            change.entity === "task" &&
+            (expected.id === undefined || change.id === expected.id) &&
+            Object.entries(expected.fields).every(([field, value]) => {
+              const actual = change.fields?.[field]?.v;
+              return typeof value === "function" ? value(actual) : actual === value;
+            }),
+        ) ?? false
+      );
+    },
+    { timeout },
+  );
 }
 
 function waitForPullResponse(page: Page, timeout = 10_000) {
-  return page.waitForResponse((response) => {
-    if (new URL(response.url()).pathname !== "/api/sync" || response.request().method() !== "POST") return false;
-    const body = response.request().postDataJSON() as { changes?: unknown[] };
-    return body.changes?.length === 0;
-  }, { timeout });
+  return page.waitForResponse(
+    (response) => {
+      if (
+        new URL(response.url()).pathname !== "/api/sync" ||
+        response.request().method() !== "POST"
+      )
+        return false;
+      const body = response.request().postDataJSON() as { changes?: unknown[] };
+      return body.changes?.length === 0;
+    },
+    { timeout },
+  );
 }
 
 async function waitUntilSynced(page: Page): Promise<void> {
@@ -54,7 +74,9 @@ async function addTask(page: Page, title: string): Promise<string> {
   const body = response.request().postDataJSON() as {
     changes: Array<{ entity: string; id: string; fields?: Record<string, { v?: unknown }> }>;
   };
-  const id = body.changes.find((change) => change.entity === "task" && change.fields?.title?.v === title)?.id;
+  const id = body.changes.find(
+    (change) => change.entity === "task" && change.fields?.title?.v === title,
+  )?.id;
   expect(id).toBeTruthy();
   return id!;
 }
@@ -70,12 +92,21 @@ test("creates, completes, trashes, and restores a task", async ({ page }) => {
 
   await page.getByRole("checkbox", { name: "完了済みも表示" }).check();
   const completeSync = waitForSyncResponse(page, { id: taskId, fields: { done: true } });
-  await taskRow(page, title).getByRole("checkbox", { name: `完了にする：${title}` }).click();
-  await expect(taskRow(page, title).getByRole("checkbox", { name: `未完了にする：${title}` })).toBeChecked();
+  await taskRow(page, title)
+    .getByRole("checkbox", { name: `完了にする：${title}` })
+    .click();
+  await expect(
+    taskRow(page, title).getByRole("checkbox", { name: `未完了にする：${title}` }),
+  ).toBeChecked();
   expect((await completeSync).ok()).toBe(true);
 
-  const deleteSync = waitForSyncResponse(page, { id: taskId, fields: { deleted_at: (value) => typeof value === "string" } });
-  await taskRow(page, title).getByRole("button", { name: `「${title}」をゴミ箱へ移動` }).click();
+  const deleteSync = waitForSyncResponse(page, {
+    id: taskId,
+    fields: { deleted_at: (value) => typeof value === "string" },
+  });
+  await taskRow(page, title)
+    .getByRole("button", { name: `「${title}」をゴミ箱へ移動` })
+    .click();
   expect((await deleteSync).ok()).toBe(true);
   await page.getByRole("button", { name: /^ゴミ箱/ }).click();
   const trashedTask = page.getByRole("listitem").filter({ hasText: title });
@@ -95,7 +126,10 @@ test("creates, completes, trashes, and restores a task", async ({ page }) => {
   await expect(taskRow(page, title)).toBeVisible();
 });
 
-test("syncs an offline edit to another browser context after reconnecting", async ({ page, browser }) => {
+test("syncs an offline edit to another browser context after reconnecting", async ({
+  page,
+  browser,
+}) => {
   await openApp(page);
   const title = newTitle("e2e-offline");
   const updatedTitle = `${title}-online`;
@@ -120,13 +154,22 @@ test("syncs an offline edit to another browser context after reconnecting", asyn
     await expect(page.getByText(/^オフライン/).first()).toBeVisible();
 
     await page.evaluate(() => {
-      window.addEventListener("online", () => {
-        document.documentElement.dataset.onlineEventSeen = "true";
-      }, { once: true });
+      window.addEventListener(
+        "online",
+        () => {
+          document.documentElement.dataset.onlineEventSeen = "true";
+        },
+        { once: true },
+      );
     });
-    const reconnectSync = waitForSyncResponse(page, { id: taskId, fields: { title: updatedTitle } }, 5_000);
+    const reconnectSync = waitForSyncResponse(
+      page,
+      { id: taskId, fields: { title: updatedTitle } },
+      5_000,
+    );
     await page.context().setOffline(false);
-    await expect.poll(() => page.locator("html").getAttribute("data-online-event-seen"), { timeout: 5_000 })
+    await expect
+      .poll(() => page.locator("html").getAttribute("data-online-event-seen"), { timeout: 5_000 })
       .toBe("true");
     expect((await reconnectSync).ok()).toBe(true);
     await expect(taskRow(page, updatedTitle)).toBeVisible();

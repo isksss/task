@@ -10,13 +10,17 @@ describe("weekly recurrence form validation", () => {
   });
 
   it("compares recurrence rules independent of weekday and object key order", () => {
-    expect(sameRecurrence(
-      { frequency: "weekly", weekdays: [3, 1] },
-      { weekdays: [1, 3], frequency: "weekly" },
-    )).toBe(true);
-    expect(sameRecurrence(
-      { frequency: "weekly", weekdays: [1, 3] },
-      { frequency: "weekly", weekdays: [1, 2] },
-    )).toBe(false);
+    expect(
+      sameRecurrence(
+        { frequency: "weekly", weekdays: [3, 1] },
+        { weekdays: [1, 3], frequency: "weekly" },
+      ),
+    ).toBe(true);
+    expect(
+      sameRecurrence(
+        { frequency: "weekly", weekdays: [1, 3] },
+        { frequency: "weekly", weekdays: [1, 2] },
+      ),
+    ).toBe(false);
   });
 });

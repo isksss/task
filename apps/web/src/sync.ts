@@ -1,4 +1,11 @@
-import { MAX_SYNC_CHANGES_PER_REQUEST, type RejectedChange, type SyncChange, type SyncResponse, type SyncRow, type Tombstone } from "@task/shared";
+import {
+  MAX_SYNC_CHANGES_PER_REQUEST,
+  type RejectedChange,
+  type SyncChange,
+  type SyncResponse,
+  type SyncRow,
+  type Tombstone,
+} from "@task/shared";
 import { applySyncData, db, getSince, setSince, type OutboxChange, type TaskDatabase } from "./db";
 
 export type SyncStatus = "idle" | "syncing" | "offline" | "reauth" | "error";
@@ -36,14 +43,23 @@ function toSyncChange(change: OutboxChange): SyncChange {
   } as SyncChange;
 }
 
-export async function fetchApiResponse(fetcher: typeof fetch, path: string, init: RequestInit = {}): Promise<Response> {
+export async function fetchApiResponse(
+  fetcher: typeof fetch,
+  path: string,
+  init: RequestInit = {},
+): Promise<Response> {
   const response = await fetcher(path, {
     ...init,
     credentials: "same-origin",
     redirect: "manual",
     headers: { "Content-Type": "application/json", ...init.headers },
   });
-  if (response.type === "opaqueredirect" || response.status === 0 || response.status === 401 || response.status === 403) {
+  if (
+    response.type === "opaqueredirect" ||
+    response.status === 0 ||
+    response.status === 401 ||
+    response.status === 403
+  ) {
     throw new ReauthenticationRequired();
   }
   if (!response.headers.get("content-type")?.toLowerCase().includes("application/json")) {
@@ -139,14 +155,25 @@ async function runSync(
     }
 
     compactPayload(payload);
-    await applySyncData(database, payload.rows, payload.tombstones, payload.rejected, payload.fullResync, acknowledged);
+    await applySyncData(
+      database,
+      payload.rows,
+      payload.tombstones,
+      payload.rejected,
+      payload.fullResync,
+      acknowledged,
+    );
     await setSince(requestSince, database);
 
     let purged = false;
     for (const change of purgeChanges) {
       const rejectedActive = payload.rejected.some((item) => {
         if (item.entity !== change.entity || item.id !== change.id) return false;
-        return item.current.entity !== "settings" && item.current.entity !== "task_tag" && item.current.deleted_at === null;
+        return (
+          item.current.entity !== "settings" &&
+          item.current.entity !== "task_tag" &&
+          item.current.deleted_at === null
+        );
       });
       if (rejectedActive) {
         await database.outbox.delete(change.change_id);
@@ -178,13 +205,20 @@ async function runSync(
       };
       requestSince = await syncRequest(fetcher, requestSince, [], finalPayload);
       compactPayload(finalPayload);
-      await applySyncData(database, finalPayload.rows, finalPayload.tombstones, finalPayload.rejected, finalPayload.fullResync);
+      await applySyncData(
+        database,
+        finalPayload.rows,
+        finalPayload.tombstones,
+        finalPayload.rejected,
+        finalPayload.fullResync,
+      );
       await setSince(requestSince, database);
     }
     onStatus?.("idle");
   } catch (error) {
     if (error instanceof ReauthenticationRequired) onStatus?.("reauth");
-    else if (error instanceof TypeError || (typeof navigator !== "undefined" && !navigator.onLine)) onStatus?.("offline");
+    else if (error instanceof TypeError || (typeof navigator !== "undefined" && !navigator.onLine))
+      onStatus?.("offline");
     else onStatus?.("error");
     throw error;
   }
@@ -229,10 +263,13 @@ export function waitForSync(database = db): Promise<void> {
 export function syncSoon(database = db, onStatus?: (status: SyncStatus) => void): void {
   const previous = debounceTimers.get(database);
   if (previous) clearTimeout(previous);
-  debounceTimers.set(database, setTimeout(() => {
-    debounceTimers.delete(database);
-    void syncNow(database, fetch, onStatus).catch(() => {});
-  }, 250));
+  debounceTimers.set(
+    database,
+    setTimeout(() => {
+      debounceTimers.delete(database);
+      void syncNow(database, fetch, onStatus).catch(() => {});
+    }, 250),
+  );
 }
 
 export function startSyncLoop(
@@ -241,7 +278,9 @@ export function startSyncLoop(
   database = db,
 ): () => void {
   const run = () => {
-    void syncNow(database, fetch, onStatus).then(onSynced).catch(() => {});
+    void syncNow(database, fetch, onStatus)
+      .then(onSynced)
+      .catch(() => {});
   };
   const onVisibility = () => {
     if (document.visibilityState === "visible") run();

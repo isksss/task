@@ -52,9 +52,9 @@ describe("Cloudflare environment configuration", () => {
         ALLOWED_EMAILS: "isksss.prp@gmail.com",
       },
     });
-    expect(() =>
-      environmentForMode("production", { productionD1Id: "production-d1-id" }),
-    ).toThrow("TASK_ALLOW_PRODUCTION_DEPLOY=1");
+    expect(() => environmentForMode("production", { productionD1Id: "production-d1-id" })).toThrow(
+      "TASK_ALLOW_PRODUCTION_DEPLOY=1",
+    );
   });
 
   it("rejects TODO database IDs and unknown modes", () => {

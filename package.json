@@ -1,10 +1,6 @@
 {
   "name": "task",
   "private": true,
-  "packageManager": "pnpm@12.14.0",
-  "engines": {
-    "node": "24.x"
-  },
   "scripts": {
     "dev": "pnpm --filter @task/web build && pnpm --filter @task/api dev",
     "lint": "oxlint --deny-warnings",
@@ -23,5 +19,9 @@
     "oxfmt": "0.74.0",
     "oxlint": "1.89.0",
     "typescript": "5.9.3"
-  }
+  },
+  "engines": {
+    "node": "24.x"
+  },
+  "packageManager": "pnpm@12.14.0"
 }

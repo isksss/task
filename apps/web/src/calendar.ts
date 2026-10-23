@@ -8,7 +8,11 @@ function parseDate(value: string): Date {
   const day = Number(match[3]);
   const date = new Date(0);
   date.setUTCFullYear(year, month - 1, day);
-  if (date.getUTCFullYear() !== year || date.getUTCMonth() + 1 !== month || date.getUTCDate() !== day) {
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() + 1 !== month ||
+    date.getUTCDate() !== day
+  ) {
     throw new RangeError("Invalid calendar date");
   }
   return date;
@@ -38,7 +42,13 @@ export function getMonthGridDates(month: string, weekStartsOn = 0): string[] {
   if (!match) throw new RangeError("Expected month YYYY-MM");
   const year = Number(match[1]);
   const monthNumber = Number(match[2]);
-  if (monthNumber < 1 || monthNumber > 12 || !Number.isInteger(weekStartsOn) || weekStartsOn < 0 || weekStartsOn > 6) {
+  if (
+    monthNumber < 1 ||
+    monthNumber > 12 ||
+    !Number.isInteger(weekStartsOn) ||
+    weekStartsOn < 0 ||
+    weekStartsOn > 6
+  ) {
     throw new RangeError("Invalid calendar month or week start");
   }
   const first = new Date(0);
@@ -47,7 +57,9 @@ export function getMonthGridDates(month: string, weekStartsOn = 0): string[] {
   last.setUTCFullYear(year, monthNumber, 0);
   const leadingDays = (first.getUTCDay() - weekStartsOn + 7) % 7;
   const count = Math.ceil((leadingDays + last.getUTCDate()) / 7) * 7;
-  return Array.from({ length: count }, (_, index) => formatDate(shiftDays(first, index - leadingDays)));
+  return Array.from({ length: count }, (_, index) =>
+    formatDate(shiftDays(first, index - leadingDays)),
+  );
 }
 
 export function getWeekDates(date: string, weekStartsOn = 0): string[] {

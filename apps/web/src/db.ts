@@ -73,20 +73,25 @@ export class TaskDatabase extends Dexie {
       outbox: "&change_id, entity, id, created_at, [entity+id]",
       meta: "&key",
     });
-    this.version(2).stores({
-      tasks: "&id, project_id, parent_task_id, deleted_at, deleted_batch_id, done, due_date",
-      projects: "&id, parent_id, deleted_at, deleted_batch_id",
-      tags: "&id, deleted_at",
-      taskTags: "&id, task_id, tag_id, active, [task_id+active], [tag_id+active]",
-      settings: "&id",
-      outbox: "&change_id, entity, id, created_at, [entity+id]",
-      meta: "&key",
-    }).upgrade(async (transaction) => {
-      await transaction.table("tasks").toCollection().modify((task: Record<string, unknown>) => {
-        task.parent_task_id ??= null;
-        task.recurrence ??= null;
+    this.version(2)
+      .stores({
+        tasks: "&id, project_id, parent_task_id, deleted_at, deleted_batch_id, done, due_date",
+        projects: "&id, parent_id, deleted_at, deleted_batch_id",
+        tags: "&id, deleted_at",
+        taskTags: "&id, task_id, tag_id, active, [task_id+active], [tag_id+active]",
+        settings: "&id",
+        outbox: "&change_id, entity, id, created_at, [entity+id]",
+        meta: "&key",
+      })
+      .upgrade(async (transaction) => {
+        await transaction
+          .table("tasks")
+          .toCollection()
+          .modify((task: Record<string, unknown>) => {
+            task.parent_task_id ??= null;
+            task.recurrence ??= null;
+          });
       });
-    });
   }
 }
 
@@ -197,7 +202,10 @@ async function writeFields<T extends object, R extends LocalRecord<T>>(
   await table.put(row);
   if (queue) {
     const previous = await database.meta.get("outbox_order");
-    const createdAt = Math.max(Date.now(), typeof previous?.value === "number" ? previous.value + 1 : 0);
+    const createdAt = Math.max(
+      Date.now(),
+      typeof previous?.value === "number" ? previous.value + 1 : 0,
+    );
     await database.meta.put({ key: "outbox_order", value: createdAt });
     await database.outbox.put({
       change_id: crypto.randomUUID(),
@@ -240,7 +248,10 @@ async function validateProjectParent(
   const subtreeDepth = (projectId: string, path: Set<string>): number => {
     if (path.has(projectId)) throw new RangeError("Project hierarchy cannot contain a cycle");
     const nextPath = new Set(path).add(projectId);
-    return 1 + Math.max(0, ...(children.get(projectId) ?? []).map((child) => subtreeDepth(child, nextPath)));
+    return (
+      1 +
+      Math.max(0, ...(children.get(projectId) ?? []).map((child) => subtreeDepth(child, nextPath)))
+    );
   };
   if (ancestorDepth + subtreeDepth(id, new Set()) > MAX_PROJECT_DEPTH) {
     throw new RangeError(`Project hierarchy cannot exceed ${MAX_PROJECT_DEPTH} levels`);
@@ -248,7 +259,8 @@ async function validateProjectParent(
 }
 
 function validateSettings(settings: UserSettings): void {
-  if (typeof settings.timezone !== "string" || settings.timezone.length > 100) throw new RangeError("Invalid timezone");
+  if (typeof settings.timezone !== "string" || settings.timezone.length > 100)
+    throw new RangeError("Invalid timezone");
   try {
     new Intl.DateTimeFormat("en", { timeZone: settings.timezone });
   } catch {
@@ -262,7 +274,8 @@ function validateTaskParent(tasks: Task[], id: string, parentTaskId: string | nu
   if (parentTaskId === null) return;
   if (parentTaskId === id) throw new RangeError("A task cannot be its own parent");
   const parent = tasks.find((task) => task.id === parentTaskId);
-  if (!parent || parent.deleted_at !== null) throw new RangeError("Parent task does not exist or is in the trash");
+  if (!parent || parent.deleted_at !== null)
+    throw new RangeError("Parent task does not exist or is in the trash");
   if (parent.parent_task_id !== null) throw new RangeError("Subtasks cannot have subtasks");
   if (tasks.some((task) => task.parent_task_id === id)) {
     throw new RangeError("A task with subtasks cannot become a subtask");
@@ -271,20 +284,28 @@ function validateTaskParent(tasks: Task[], id: string, parentTaskId: string | nu
 
 function validateTask(patch: Partial<TaskFields>, current: TaskFields): void {
   const next = { ...current, ...patch };
-  if (typeof next.title !== "string" || next.title.trim().length === 0 || [...next.title].length > MAX_TITLE_LENGTH) {
+  if (
+    typeof next.title !== "string" ||
+    next.title.trim().length === 0 ||
+    [...next.title].length > MAX_TITLE_LENGTH
+  ) {
     throw new RangeError(`Task title must contain 1-${MAX_TITLE_LENGTH} characters`);
   }
   if (typeof next.note !== "string" || [...next.note].length > MAX_NOTE_LENGTH) {
     throw new RangeError(`Task note must be at most ${MAX_NOTE_LENGTH} characters`);
   }
-  if (next.due_date !== null && !dateIsValid(next.due_date)) throw new RangeError("Invalid due date");
+  if (next.due_date !== null && !dateIsValid(next.due_date))
+    throw new RangeError("Invalid due date");
   if (next.due_time !== null && (!clockIsValid(next.due_time) || next.due_date === null)) {
     throw new RangeError("Due time requires a date and must use HH:mm");
   }
   if (next.recurrence !== null && (next.due_date === null || !isValidRecurrence(next.recurrence))) {
     throw new RangeError("Recurrence requires a due date and a valid rule");
   }
-  if (next.parent_task_id !== null && (typeof next.parent_task_id !== "string" || !/^[0-9a-f-]{36}$/i.test(next.parent_task_id))) {
+  if (
+    next.parent_task_id !== null &&
+    (typeof next.parent_task_id !== "string" || !/^[0-9a-f-]{36}$/i.test(next.parent_task_id))
+  ) {
     throw new RangeError("Invalid parent task");
   }
   if (![0, 1, 2, 3].includes(next.priority)) throw new RangeError("Invalid priority");
@@ -312,33 +333,41 @@ export async function createTask(
   if (!normalizedTitle || [...normalizedTitle].length > MAX_TITLE_LENGTH) {
     throw new RangeError(`Task title must contain 1-${MAX_TITLE_LENGTH} characters`);
   }
-  return database.transaction("rw", database.tasks, database.projects, database.outbox, database.meta, async () => {
-    validateTaskParent(await database.tasks.toArray(), "", parentTaskId);
-    if (projectId !== null) {
-      const project = await database.projects.get(projectId);
-      if (!project || project.deleted_at !== null) throw new RangeError("Project does not exist or is in the trash");
-    }
-    const id = crypto.randomUUID();
-    const defaults = taskDefaults(id);
-    const hlc = await nextLocalHlc(database);
-    const fields: TaskFields = {
-      project_id: projectId,
-      parent_task_id: parentTaskId,
-      recurrence: null,
-      title: normalizedTitle,
-      note: "",
-      done: false,
-      due_date: null,
-      due_time: null,
-      priority: 0,
-      created_at: defaults.created_at,
-      deleted_at: null,
-      deleted_batch_id: null,
-    };
-    const row = await writeFields(database, database.tasks, "task", id, defaults, fields, hlc);
-    await saveHlc(database, hlc);
-    return row;
-  });
+  return database.transaction(
+    "rw",
+    database.tasks,
+    database.projects,
+    database.outbox,
+    database.meta,
+    async () => {
+      validateTaskParent(await database.tasks.toArray(), "", parentTaskId);
+      if (projectId !== null) {
+        const project = await database.projects.get(projectId);
+        if (!project || project.deleted_at !== null)
+          throw new RangeError("Project does not exist or is in the trash");
+      }
+      const id = crypto.randomUUID();
+      const defaults = taskDefaults(id);
+      const hlc = await nextLocalHlc(database);
+      const fields: TaskFields = {
+        project_id: projectId,
+        parent_task_id: parentTaskId,
+        recurrence: null,
+        title: normalizedTitle,
+        note: "",
+        done: false,
+        due_date: null,
+        due_time: null,
+        priority: 0,
+        created_at: defaults.created_at,
+        deleted_at: null,
+        deleted_batch_id: null,
+      };
+      const row = await writeFields(database, database.tasks, "task", id, defaults, fields, hlc);
+      await saveHlc(database, hlc);
+      return row;
+    },
+  );
 }
 
 export async function updateTask(
@@ -346,52 +375,84 @@ export async function updateTask(
   patch: Partial<TaskFields>,
   database = db,
 ): Promise<Task> {
-  return database.transaction("rw", database.tasks, database.projects, database.outbox, database.meta, async () => {
-    const current = await database.tasks.get(id);
-    if (!current) throw new RangeError("Task does not exist");
-    const update = { ...patch };
-    if (update.title !== undefined) update.title = update.title.trim();
-    validateTask(update, current);
-    const nextParentTaskId = update.parent_task_id !== undefined ? update.parent_task_id : current.parent_task_id;
-    if (update.parent_task_id !== undefined && update.parent_task_id !== current.parent_task_id) {
-      validateTaskParent(await database.tasks.toArray(), id, nextParentTaskId);
-    }
-    const nextProjectId = update.project_id !== undefined ? update.project_id : current.project_id;
-    if (nextProjectId !== null) {
-      const project = await database.projects.get(nextProjectId);
-      if (!project || project.deleted_at !== null) throw new RangeError("Project does not exist or is in the trash");
-    }
-    const hlc = await nextLocalHlc(database);
-    const row = await writeFields(database, database.tasks, "task", id, taskDefaults(id, current.created_at), update, hlc);
-    if (
-      !current.done && row.done && current.deleted_at === null && row.deleted_at === null &&
-      row.recurrence && row.due_date &&
-      (row.project_id === null || (await database.projects.get(row.project_id))?.deleted_at === null) &&
-      (row.parent_task_id === null || (await database.tasks.get(row.parent_task_id))?.deleted_at === null)
-    ) {
-      const dueDate = nextRecurrenceDate(row.due_date, row.recurrence);
-      const nextId = await Dexie.waitFor(recurringTaskId(row.id, dueDate));
-      if (!(await database.tasks.get(nextId))) {
-        const fields: TaskFields = {
-          project_id: row.project_id,
-          parent_task_id: row.parent_task_id,
-          recurrence: row.recurrence,
-          title: row.title,
-          note: row.note,
-          done: false,
-          due_date: dueDate,
-          due_time: row.due_time,
-          priority: row.priority,
-          created_at: new Date().toISOString(),
-          deleted_at: null,
-          deleted_batch_id: null,
-        };
-        await writeFields(database, database.tasks, "task", nextId, taskDefaults(nextId, fields.created_at), fields, hlc);
+  return database.transaction(
+    "rw",
+    database.tasks,
+    database.projects,
+    database.outbox,
+    database.meta,
+    async () => {
+      const current = await database.tasks.get(id);
+      if (!current) throw new RangeError("Task does not exist");
+      const update = { ...patch };
+      if (update.title !== undefined) update.title = update.title.trim();
+      validateTask(update, current);
+      const nextParentTaskId =
+        update.parent_task_id !== undefined ? update.parent_task_id : current.parent_task_id;
+      if (update.parent_task_id !== undefined && update.parent_task_id !== current.parent_task_id) {
+        validateTaskParent(await database.tasks.toArray(), id, nextParentTaskId);
       }
-    }
-    await saveHlc(database, hlc);
-    return row;
-  });
+      const nextProjectId =
+        update.project_id !== undefined ? update.project_id : current.project_id;
+      if (nextProjectId !== null) {
+        const project = await database.projects.get(nextProjectId);
+        if (!project || project.deleted_at !== null)
+          throw new RangeError("Project does not exist or is in the trash");
+      }
+      const hlc = await nextLocalHlc(database);
+      const row = await writeFields(
+        database,
+        database.tasks,
+        "task",
+        id,
+        taskDefaults(id, current.created_at),
+        update,
+        hlc,
+      );
+      if (
+        !current.done &&
+        row.done &&
+        current.deleted_at === null &&
+        row.deleted_at === null &&
+        row.recurrence &&
+        row.due_date &&
+        (row.project_id === null ||
+          (await database.projects.get(row.project_id))?.deleted_at === null) &&
+        (row.parent_task_id === null ||
+          (await database.tasks.get(row.parent_task_id))?.deleted_at === null)
+      ) {
+        const dueDate = nextRecurrenceDate(row.due_date, row.recurrence);
+        const nextId = await Dexie.waitFor(recurringTaskId(row.id, dueDate));
+        if (!(await database.tasks.get(nextId))) {
+          const fields: TaskFields = {
+            project_id: row.project_id,
+            parent_task_id: row.parent_task_id,
+            recurrence: row.recurrence,
+            title: row.title,
+            note: row.note,
+            done: false,
+            due_date: dueDate,
+            due_time: row.due_time,
+            priority: row.priority,
+            created_at: new Date().toISOString(),
+            deleted_at: null,
+            deleted_batch_id: null,
+          };
+          await writeFields(
+            database,
+            database.tasks,
+            "task",
+            nextId,
+            taskDefaults(nextId, fields.created_at),
+            fields,
+            hlc,
+          );
+        }
+      }
+      await saveHlc(database, hlc);
+      return row;
+    },
+  );
 }
 
 export async function deleteTask(id: string, database = db): Promise<Task> {
@@ -401,16 +462,33 @@ export async function deleteTask(id: string, database = db): Promise<Task> {
     const deletedAt = new Date().toISOString();
     const batchId = crypto.randomUUID();
     const hlc = await nextLocalHlc(database);
-    const row = await writeFields(database, database.tasks, "task", id, taskDefaults(id, current.created_at), {
-      deleted_at: deletedAt,
-      deleted_batch_id: batchId,
-    }, hlc);
+    const row = await writeFields(
+      database,
+      database.tasks,
+      "task",
+      id,
+      taskDefaults(id, current.created_at),
+      {
+        deleted_at: deletedAt,
+        deleted_batch_id: batchId,
+      },
+      hlc,
+    );
     for (const child of await database.tasks.where("parent_task_id").equals(id).toArray()) {
       if (child.deleted_at === null) {
-        await writeFields(database, database.tasks, "task", child.id, taskDefaults(child.id, child.created_at), {
-          deleted_at: deletedAt,
-          deleted_batch_id: batchId,
-        }, hlc, false);
+        await writeFields(
+          database,
+          database.tasks,
+          "task",
+          child.id,
+          taskDefaults(child.id, child.created_at),
+          {
+            deleted_at: deletedAt,
+            deleted_batch_id: batchId,
+          },
+          hlc,
+          false,
+        );
       }
     }
     await saveHlc(database, hlc);
@@ -424,16 +502,33 @@ export async function restoreTask(id: string, database = db): Promise<Task> {
     if (!current || current.deleted_at === null) throw new RangeError("Task is not in the trash");
     const batchId = current.deleted_batch_id;
     const hlc = await nextLocalHlc(database);
-    const row = await writeFields(database, database.tasks, "task", id, taskDefaults(id, current.created_at), {
-      deleted_at: null,
-      deleted_batch_id: null,
-    }, hlc);
+    const row = await writeFields(
+      database,
+      database.tasks,
+      "task",
+      id,
+      taskDefaults(id, current.created_at),
+      {
+        deleted_at: null,
+        deleted_batch_id: null,
+      },
+      hlc,
+    );
     for (const child of await database.tasks.where("parent_task_id").equals(id).toArray()) {
       if (child.deleted_batch_id === batchId) {
-        await writeFields(database, database.tasks, "task", child.id, taskDefaults(child.id, child.created_at), {
-          deleted_at: null,
-          deleted_batch_id: null,
-        }, hlc, false);
+        await writeFields(
+          database,
+          database.tasks,
+          "task",
+          child.id,
+          taskDefaults(child.id, child.created_at),
+          {
+            deleted_at: null,
+            deleted_batch_id: null,
+          },
+          hlc,
+          false,
+        );
       }
     }
     await saveHlc(database, hlc);
@@ -462,7 +557,15 @@ export async function createProject(
       deleted_at: null,
       deleted_batch_id: null,
     };
-    const row = await writeFields(database, database.projects, "project", id, defaults, fields, hlc);
+    const row = await writeFields(
+      database,
+      database.projects,
+      "project",
+      id,
+      defaults,
+      fields,
+      hlc,
+    );
     await saveHlc(database, hlc);
     return row;
   });
@@ -479,13 +582,22 @@ export async function updateProject(
     const update = { ...patch };
     if (update.name !== undefined) {
       update.name = update.name.trim();
-      if (!update.name || [...update.name].length > MAX_TITLE_LENGTH) throw new RangeError("Invalid project name");
+      if (!update.name || [...update.name].length > MAX_TITLE_LENGTH)
+        throw new RangeError("Invalid project name");
     }
     if (update.parent_id !== undefined && update.parent_id !== current.parent_id) {
       await validateProjectParent(await database.projects.toArray(), id, update.parent_id);
     }
     const hlc = await nextLocalHlc(database);
-    const row = await writeFields(database, database.projects, "project", id, projectDefaults(id), update, hlc);
+    const row = await writeFields(
+      database,
+      database.projects,
+      "project",
+      id,
+      projectDefaults(id),
+      update,
+      hlc,
+    );
     await saveHlc(database, hlc);
     return row;
   });
@@ -493,27 +605,41 @@ export async function updateProject(
 
 export async function createTag(name: string, database = db): Promise<Tag> {
   const normalizedName = name.trim();
-  if (!normalizedName || [...normalizedName].length > MAX_TITLE_LENGTH) throw new RangeError("Invalid tag name");
+  if (!normalizedName || [...normalizedName].length > MAX_TITLE_LENGTH)
+    throw new RangeError("Invalid tag name");
   return database.transaction("rw", database.tags, database.outbox, database.meta, async () => {
     const id = crypto.randomUUID();
     const hlc = await nextLocalHlc(database);
-    const row = await writeFields(database, database.tags, "tag", id, tagDefaults(id), {
-      name: normalizedName,
-      deleted_at: null,
-    }, hlc);
+    const row = await writeFields(
+      database,
+      database.tags,
+      "tag",
+      id,
+      tagDefaults(id),
+      {
+        name: normalizedName,
+        deleted_at: null,
+      },
+      hlc,
+    );
     await saveHlc(database, hlc);
     return row;
   });
 }
 
-export async function updateTag(id: string, patch: Partial<TagFields>, database = db): Promise<Tag> {
+export async function updateTag(
+  id: string,
+  patch: Partial<TagFields>,
+  database = db,
+): Promise<Tag> {
   return database.transaction("rw", database.tags, database.outbox, database.meta, async () => {
     const current = await database.tags.get(id);
     if (!current) throw new RangeError("Tag does not exist");
     const update = { ...patch };
     if (update.name !== undefined) {
       update.name = update.name.trim();
-      if (!update.name || [...update.name].length > MAX_TITLE_LENGTH) throw new RangeError("Invalid tag name");
+      if (!update.name || [...update.name].length > MAX_TITLE_LENGTH)
+        throw new RangeError("Invalid tag name");
     }
     const hlc = await nextLocalHlc(database);
     const row = await writeFields(database, database.tags, "tag", id, tagDefaults(id), update, hlc);
@@ -522,23 +648,45 @@ export async function updateTag(id: string, patch: Partial<TagFields>, database 
   });
 }
 
-export async function setTaskTag(taskId: string, tagId: string, active: boolean, database = db): Promise<TaskTag> {
-  return database.transaction("rw", database.tasks, database.tags, database.taskTags, database.outbox, database.meta, async () => {
-    const id = `${taskId}:${tagId}`;
-    const [task, tag, current] = await Promise.all([
-      database.tasks.get(taskId),
-      database.tags.get(tagId),
-      database.taskTags.get(id),
-    ]);
-    if (!task || task.deleted_at !== null) throw new RangeError("Task does not exist or is in the trash");
-    if ((!tag && (active || !current)) || (active && tag?.deleted_at !== null)) {
-      throw new RangeError("Tag does not exist or is in the trash");
-    }
-    const hlc = await nextLocalHlc(database);
-    const row = await writeFields(database, database.taskTags, "task_tag", id, taskTagDefaults(id, taskId, tagId), { active }, hlc);
-    await saveHlc(database, hlc);
-    return row;
-  });
+export async function setTaskTag(
+  taskId: string,
+  tagId: string,
+  active: boolean,
+  database = db,
+): Promise<TaskTag> {
+  return database.transaction(
+    "rw",
+    database.tasks,
+    database.tags,
+    database.taskTags,
+    database.outbox,
+    database.meta,
+    async () => {
+      const id = `${taskId}:${tagId}`;
+      const [task, tag, current] = await Promise.all([
+        database.tasks.get(taskId),
+        database.tags.get(tagId),
+        database.taskTags.get(id),
+      ]);
+      if (!task || task.deleted_at !== null)
+        throw new RangeError("Task does not exist or is in the trash");
+      if ((!tag && (active || !current)) || (active && tag?.deleted_at !== null)) {
+        throw new RangeError("Tag does not exist or is in the trash");
+      }
+      const hlc = await nextLocalHlc(database);
+      const row = await writeFields(
+        database,
+        database.taskTags,
+        "task_tag",
+        id,
+        taskTagDefaults(id, taskId, tagId),
+        { active },
+        hlc,
+      );
+      await saveHlc(database, hlc);
+      return row;
+    },
+  );
 }
 
 function descendantsOf(rootId: string, projects: Project[]): Set<string> {
@@ -572,30 +720,66 @@ export async function deleteProject(id: string, database = db): Promise<Project>
       const batchId = crypto.randomUUID();
       const deletedAt = new Date().toISOString();
       const hlc = await nextLocalHlc(database);
-      const result = await writeFields(database, database.projects, "project", id, projectDefaults(id), {
-        deleted_at: deletedAt,
-        deleted_batch_id: batchId,
-      }, hlc);
+      const result = await writeFields(
+        database,
+        database.projects,
+        "project",
+        id,
+        projectDefaults(id),
+        {
+          deleted_at: deletedAt,
+          deleted_batch_id: batchId,
+        },
+        hlc,
+      );
       for (const child of projects) {
         if (child.id !== id && ids.has(child.id)) {
-          await writeFields(database, database.projects, "project", child.id, projectDefaults(child.id), {
-            deleted_at: deletedAt,
-            deleted_batch_id: batchId,
-          }, hlc, false);
+          await writeFields(
+            database,
+            database.projects,
+            "project",
+            child.id,
+            projectDefaults(child.id),
+            {
+              deleted_at: deletedAt,
+              deleted_batch_id: batchId,
+            },
+            hlc,
+            false,
+          );
         }
       }
-      const taskIds = new Set(tasks.filter((task) =>
-        task.deleted_at === null && task.project_id !== null && ids.has(task.project_id),
-      ).map((task) => task.id));
+      const taskIds = new Set(
+        tasks
+          .filter(
+            (task) =>
+              task.deleted_at === null && task.project_id !== null && ids.has(task.project_id),
+          )
+          .map((task) => task.id),
+      );
       for (const task of tasks) {
-        if (task.parent_task_id !== null && taskIds.has(task.parent_task_id) && task.deleted_at === null) taskIds.add(task.id);
+        if (
+          task.parent_task_id !== null &&
+          taskIds.has(task.parent_task_id) &&
+          task.deleted_at === null
+        )
+          taskIds.add(task.id);
       }
       for (const task of tasks) {
         if (taskIds.has(task.id)) {
-          await writeFields(database, database.tasks, "task", task.id, taskDefaults(task.id, task.created_at), {
-            deleted_at: deletedAt,
-            deleted_batch_id: batchId,
-          }, hlc, false);
+          await writeFields(
+            database,
+            database.tasks,
+            "task",
+            task.id,
+            taskDefaults(task.id, task.created_at),
+            {
+              deleted_at: deletedAt,
+              deleted_batch_id: batchId,
+            },
+            hlc,
+            false,
+          );
         }
       }
       await saveHlc(database, hlc);
@@ -613,36 +797,71 @@ export async function restoreProject(id: string, database = db): Promise<Project
     database.meta,
     async () => {
       const root = await database.projects.get(id);
-      if (!root || root.deleted_at === null || !root.deleted_batch_id) throw new RangeError("Project is not in the trash");
+      if (!root || root.deleted_at === null || !root.deleted_batch_id)
+        throw new RangeError("Project is not in the trash");
       const batchId = root.deleted_batch_id;
       const projects = await database.projects.toArray();
       const ids = descendantsOf(id, projects);
       const tasks = await database.tasks.toArray();
       const hlc = await nextLocalHlc(database);
-      const result = await writeFields(database, database.projects, "project", id, projectDefaults(id), {
-        deleted_at: null,
-        deleted_batch_id: null,
-      }, hlc);
+      const result = await writeFields(
+        database,
+        database.projects,
+        "project",
+        id,
+        projectDefaults(id),
+        {
+          deleted_at: null,
+          deleted_batch_id: null,
+        },
+        hlc,
+      );
       for (const child of projects) {
         if (child.id !== id && ids.has(child.id) && child.deleted_batch_id === batchId) {
-          await writeFields(database, database.projects, "project", child.id, projectDefaults(child.id), {
-            deleted_at: null,
-            deleted_batch_id: null,
-          }, hlc, false);
+          await writeFields(
+            database,
+            database.projects,
+            "project",
+            child.id,
+            projectDefaults(child.id),
+            {
+              deleted_at: null,
+              deleted_batch_id: null,
+            },
+            hlc,
+            false,
+          );
         }
       }
-      const projectTaskIds = new Set(tasks.filter((task) =>
-        task.deleted_batch_id === batchId && task.project_id !== null && ids.has(task.project_id),
-      ).map((task) => task.id));
+      const projectTaskIds = new Set(
+        tasks
+          .filter(
+            (task) =>
+              task.deleted_batch_id === batchId &&
+              task.project_id !== null &&
+              ids.has(task.project_id),
+          )
+          .map((task) => task.id),
+      );
       for (const task of tasks) {
         if (
           task.deleted_batch_id === batchId &&
-          (projectTaskIds.has(task.id) || (task.parent_task_id !== null && projectTaskIds.has(task.parent_task_id)))
+          (projectTaskIds.has(task.id) ||
+            (task.parent_task_id !== null && projectTaskIds.has(task.parent_task_id)))
         ) {
-          await writeFields(database, database.tasks, "task", task.id, taskDefaults(task.id, task.created_at), {
-            deleted_at: null,
-            deleted_batch_id: null,
-          }, hlc, false);
+          await writeFields(
+            database,
+            database.tasks,
+            "task",
+            task.id,
+            taskDefaults(task.id, task.created_at),
+            {
+              deleted_at: null,
+              deleted_batch_id: null,
+            },
+            hlc,
+            false,
+          );
         }
       }
       await saveHlc(database, hlc);
@@ -657,55 +876,113 @@ export async function updateSettings(
 ): Promise<SettingsRecord> {
   return database.transaction("rw", database.settings, database.outbox, database.meta, async () => {
     const current = (await database.settings.get(SETTINGS_ID)) ?? settingsDefaults();
-    const next = { timezone: current.timezone, locale: current.locale, digest_time: current.digest_time, ...patch };
+    const next = {
+      timezone: current.timezone,
+      locale: current.locale,
+      digest_time: current.digest_time,
+      ...patch,
+    };
     validateSettings(next);
     if (Object.keys(patch).length === 0) return current;
     const hlc = await nextLocalHlc(database);
-    const row = await writeFields(database, database.settings, "settings", SETTINGS_ID, settingsDefaults(), patch, hlc);
+    const row = await writeFields(
+      database,
+      database.settings,
+      "settings",
+      SETTINGS_ID,
+      settingsDefaults(),
+      patch,
+      hlc,
+    );
     await saveHlc(database, hlc);
     return row;
   });
 }
 
-export async function purgeTrash(entity: "task" | "project" | "tag", id: string, database = db): Promise<void> {
-  await database.transaction("rw", database.tasks, database.projects, database.tags, database.outbox, database.meta, async () => {
-    const selected = entity === "task" ? await database.tasks.get(id) : entity === "project" ? await database.projects.get(id) : await database.tags.get(id);
-    if (!selected || selected.deleted_at === null) throw new RangeError("Item is not in the trash");
-    const batchId = entity === "project" ? (selected as Project).deleted_batch_id : entity === "task" ? (selected as Task).deleted_batch_id : null;
-    const purgedIds: { entity: "task" | "project" | "tag"; id: string }[] = [{ entity, id }];
-    if (entity === "project" && batchId !== null) {
-      const [projects, tasks] = await Promise.all([database.projects.toArray(), database.tasks.toArray()]);
-      for (const project of projects) {
-        if (project.id !== id && project.deleted_at !== null && project.deleted_batch_id === batchId) {
-          purgedIds.push({ entity: "project", id: project.id });
+export async function purgeTrash(
+  entity: "task" | "project" | "tag",
+  id: string,
+  database = db,
+): Promise<void> {
+  await database.transaction(
+    "rw",
+    database.tasks,
+    database.projects,
+    database.tags,
+    database.outbox,
+    database.meta,
+    async () => {
+      const selected =
+        entity === "task"
+          ? await database.tasks.get(id)
+          : entity === "project"
+            ? await database.projects.get(id)
+            : await database.tags.get(id);
+      if (!selected || selected.deleted_at === null)
+        throw new RangeError("Item is not in the trash");
+      const batchId =
+        entity === "project"
+          ? (selected as Project).deleted_batch_id
+          : entity === "task"
+            ? (selected as Task).deleted_batch_id
+            : null;
+      const purgedIds: { entity: "task" | "project" | "tag"; id: string }[] = [{ entity, id }];
+      if (entity === "project" && batchId !== null) {
+        const [projects, tasks] = await Promise.all([
+          database.projects.toArray(),
+          database.tasks.toArray(),
+        ]);
+        for (const project of projects) {
+          if (
+            project.id !== id &&
+            project.deleted_at !== null &&
+            project.deleted_batch_id === batchId
+          ) {
+            purgedIds.push({ entity: "project", id: project.id });
+          }
         }
+        for (const task of tasks) {
+          if (task.deleted_at !== null && task.deleted_batch_id === batchId)
+            purgedIds.push({ entity: "task", id: task.id });
+        }
+        await database.projects.bulkDelete(
+          purgedIds.filter((entry) => entry.entity === "project").map((entry) => entry.id),
+        );
+        await database.tasks.bulkDelete(
+          purgedIds.filter((entry) => entry.entity === "task").map((entry) => entry.id),
+        );
+      } else if (entity === "task") {
+        const children =
+          batchId === null
+            ? []
+            : await database.tasks
+                .where("parent_task_id")
+                .equals(id)
+                .filter((task) => task.deleted_batch_id === batchId)
+                .toArray();
+        await database.tasks.bulkDelete([id, ...children.map((task) => task.id)]);
+      } else if (entity === "project") {
+        await database.projects.delete(id);
+      } else {
+        await database.tags.delete(id);
       }
-      for (const task of tasks) {
-        if (task.deleted_at !== null && task.deleted_batch_id === batchId) purgedIds.push({ entity: "task", id: task.id });
-      }
-      await database.projects.bulkDelete(purgedIds.filter((entry) => entry.entity === "project").map((entry) => entry.id));
-      await database.tasks.bulkDelete(purgedIds.filter((entry) => entry.entity === "task").map((entry) => entry.id));
-    } else if (entity === "task") {
-      const children = batchId === null ? [] : await database.tasks.where("parent_task_id").equals(id).filter((task) => task.deleted_batch_id === batchId).toArray();
-      await database.tasks.bulkDelete([id, ...children.map((task) => task.id)]);
-    } else if (entity === "project") {
-      await database.projects.delete(id);
-    } else {
-      await database.tags.delete(id);
-    }
-    const previous = await database.meta.get("outbox_order");
-    const createdAt = Math.max(Date.now(), typeof previous?.value === "number" ? previous.value + 1 : 0);
-    await database.meta.put({ key: "outbox_order", value: createdAt });
-    await database.outbox.put({
-      change_id: crypto.randomUUID(),
-      entity,
-      id,
-      fields: {},
-      created_at: createdAt,
-      ...(entity === "project" ? { batch_id: batchId } : {}),
-      operation: "purge",
-    });
-  });
+      const previous = await database.meta.get("outbox_order");
+      const createdAt = Math.max(
+        Date.now(),
+        typeof previous?.value === "number" ? previous.value + 1 : 0,
+      );
+      await database.meta.put({ key: "outbox_order", value: createdAt });
+      await database.outbox.put({
+        change_id: crypto.randomUUID(),
+        entity,
+        id,
+        fields: {},
+        created_at: createdAt,
+        ...(entity === "project" ? { batch_id: batchId } : {}),
+        operation: "purge",
+      });
+    },
+  );
 }
 
 export async function applySyncData(
@@ -718,11 +995,21 @@ export async function applySyncData(
 ): Promise<void> {
   await database.transaction(
     "rw",
-    [database.tasks, database.projects, database.tags, database.taskTags, database.settings, database.outbox, database.meta],
+    [
+      database.tasks,
+      database.projects,
+      database.tags,
+      database.taskTags,
+      database.settings,
+      database.outbox,
+      database.meta,
+    ],
     async () => {
       if (acknowledged.length > 0) await database.outbox.bulkDelete(acknowledged);
       const pending = await database.outbox.toArray();
-      const pendingKeys = new Set(pending.filter((item) => !item.operation).map((item) => `${item.entity}:${item.id}`));
+      const pendingKeys = new Set(
+        pending.filter((item) => !item.operation).map((item) => `${item.entity}:${item.id}`),
+      );
       const pendingFields = new Map<string, Set<string>>();
       for (const item of pending) {
         if (item.operation) continue;
@@ -742,7 +1029,8 @@ export async function applySyncData(
           if (!pendingKeys.has(`tag:${tag.id}`)) await database.tags.delete(tag.id);
         }
         for (const taskTag of await database.taskTags.toArray()) {
-          if (!pendingKeys.has(`task_tag:${taskTag.id}`)) await database.taskTags.delete(taskTag.id);
+          if (!pendingKeys.has(`task_tag:${taskTag.id}`))
+            await database.taskTags.delete(taskTag.id);
         }
         if (!pendingKeys.has("settings:settings")) await database.settings.clear();
       }
@@ -781,26 +1069,48 @@ export async function applySyncData(
           await saveRemote(database.tasks, "task", task.id, task, task.field_ts, task.seq);
         } else if (row.entity === "project") {
           const { entity: _entity, ...project } = row;
-          await saveRemote(database.projects, "project", project.id, project, project.field_ts, project.seq);
+          await saveRemote(
+            database.projects,
+            "project",
+            project.id,
+            project,
+            project.field_ts,
+            project.seq,
+          );
         } else if (row.entity === "tag") {
           const { entity: _entity, ...tag } = row;
           await saveRemote(database.tags, "tag", tag.id, tag, tag.field_ts, tag.seq);
         } else if (row.entity === "task_tag") {
           const { entity: _entity, ...taskTag } = row;
-          await saveRemote(database.taskTags, "task_tag", taskTag.id, taskTag, taskTag.field_ts, taskTag.seq);
+          await saveRemote(
+            database.taskTags,
+            "task_tag",
+            taskTag.id,
+            taskTag,
+            taskTag.field_ts,
+            taskTag.seq,
+          );
         } else {
           const { entity: _entity, ...settings } = row;
-          await saveRemote(database.settings, "settings", SETTINGS_ID, settings, settings.field_ts, settings.seq);
+          await saveRemote(
+            database.settings,
+            "settings",
+            SETTINGS_ID,
+            settings,
+            settings.field_ts,
+            settings.seq,
+          );
         }
       }
 
       for (const item of rejected) {
         const row = item.current;
         const rowId = row.entity === "settings" ? SETTINGS_ID : row.id;
-        const newerRow = rows.find((candidate) =>
-          candidate.entity === row.entity &&
-          (candidate.entity === "settings" ? SETTINGS_ID : candidate.id) === rowId &&
-          candidate.seq > row.seq,
+        const newerRow = rows.find(
+          (candidate) =>
+            candidate.entity === row.entity &&
+            (candidate.entity === "settings" ? SETTINGS_ID : candidate.id) === rowId &&
+            candidate.seq > row.seq,
         );
         if (newerRow) {
           await database.outbox.delete(item.change_id);
@@ -844,12 +1154,18 @@ export async function applySyncData(
         if (tombstone.entity === "task") await database.tasks.delete(tombstone.id);
         else if (tombstone.entity === "project") await database.projects.delete(tombstone.id);
         else await database.tags.delete(tombstone.id);
-        await database.outbox.where("[entity+id]").equals([tombstone.entity, tombstone.id]).delete();
+        await database.outbox
+          .where("[entity+id]")
+          .equals([tombstone.entity, tombstone.id])
+          .delete();
       }
       if (latest) {
         const previous = await database.meta.get("last_hlc");
         const previousClock = previous?.value as Hlc | undefined;
-        await database.meta.put({ key: "last_hlc", value: previousClock && compareHlc(previousClock, latest) > 0 ? previousClock : latest });
+        await database.meta.put({
+          key: "last_hlc",
+          value: previousClock && compareHlc(previousClock, latest) > 0 ? previousClock : latest,
+        });
       }
     },
   );
@@ -871,7 +1187,9 @@ export async function getSettings(database = db): Promise<SettingsRecord> {
 export async function clearLocalData(
   database = db,
   storage: Pick<Storage, "clear"> = localStorage,
-  cacheStorage: Pick<CacheStorage, "keys" | "delete"> | undefined = typeof caches === "undefined" ? undefined : caches,
+  cacheStorage: Pick<CacheStorage, "keys" | "delete"> | undefined = typeof caches === "undefined"
+    ? undefined
+    : caches,
   navigate: (path: string) => void = (path) => {
     if (import.meta.env.DEV) window.location.reload();
     else window.location.assign(path);
