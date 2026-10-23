@@ -65,4 +65,6 @@ pnpm --filter @task/api exec cf deploy --mode staging --secrets-file ../../.vapi
 TASK_ALLOW_PRODUCTION_DEPLOY=1 pnpm --filter @task/api exec cf deploy --mode production --secrets-file ../../.vapid-secrets.json
 ```
 
+**注意**: `--secrets-file` なしの `cf deploy`（`deploy:staging` / `deploy:production` を含む）は登録済み secret を削除します。secret 登録後は毎回 `--secrets-file` を付けて deploy し、`cf workers secrets list --worker <name>` で残っていることを確認してください。
+
 `.vapid-secrets.json` は Git 管理対象外です。鍵の再生成・変更時は既存の Push 購読との互換性を保つため、鍵を失効させる影響を確認してください。staging / production で secret が未設定または不正な場合、Push 送信はスキップしてログに記録されます。
