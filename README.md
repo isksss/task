@@ -12,6 +12,9 @@ pnpm dev
 `pnpm dev` は web をビルドしてから `apps/api` の Worker を `cf dev` で起動します。`cf` CLI はルートの `devDependency`（`0.15.0`）で固定し、プロジェクト内の scripts から実行します。
 
 ```sh
+pnpm fmt          # format files
+pnpm fmt:check    # check formatting
+pnpm lint
 pnpm typecheck
 pnpm build
 pnpm test
