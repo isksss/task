@@ -1,0 +1,25 @@
+{
+  "name": "@task/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "cf dev --mode development",
+    "build": "cf build --mode development",
+    "deploy:staging": "cf deploy --mode staging --secrets-file ../../.vapid-secrets.json",
+    "deploy:production": "TASK_ALLOW_PRODUCTION_DEPLOY=1 cf deploy --mode production --secrets-file ../../.vapid-secrets.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --mode test"
+  },
+  "dependencies": {
+    "@task/shared": "workspace:*",
+    "hono": "^4.13.13"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.64.0",
+    "@cloudflare/vitest-plugin": "1.4.6",
+    "@cloudflare/workers-types": "^5.20261021.1",
+    "vite": "^8.3.0",
+    "vitest": "4.1.0",
+    "wrangler": "^4.151.0"
+  }
+}

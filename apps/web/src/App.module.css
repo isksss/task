@@ -1,0 +1,1208 @@
+.appShell {
+  min-height: 100vh;
+  color: var(--text);
+  background: var(--canvas);
+}
+
+.sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 20;
+  display: flex;
+  width: 232px;
+  flex-direction: column;
+  padding: 12px 10px 10px;
+  border-right: 1px solid var(--border);
+  background: var(--canvas);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 6px 14px;
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.brandMark {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 5px;
+  color: white;
+  background: var(--accent);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.primaryNav,
+.projectNavigation {
+  display: grid;
+  gap: 1px;
+}
+
+.navItem,
+.projectLink {
+  display: flex;
+  min-width: 0;
+  min-height: 30px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  padding: 0 8px;
+  color: var(--text-muted);
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.navItem:hover,
+.projectLink:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.navItem.active,
+.projectLink.active {
+  color: var(--text);
+  background: var(--selected);
+  font-weight: 500;
+}
+
+.navIcon {
+  display: inline-grid;
+  width: 18px;
+  flex: 0 0 18px;
+  place-items: center;
+  color: currentColor;
+  font-size: 1rem;
+}
+
+.projectHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 18px 2px 4px;
+  padding: 0 8px;
+}
+
+.projectHeader h2 {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.projectTree {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  padding: 0 0 0 18px;
+  list-style: none;
+}
+
+.projectNavigation > .projectTree {
+  padding-left: 0;
+}
+
+.projectLink {
+  gap: 9px;
+  padding: 0 8px;
+  font-size: 1rem;
+}
+
+.projectLinkName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projectDot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border: 1.5px solid currentColor;
+  border-radius: 3px;
+}
+
+.projectNavigation {
+  overflow-y: auto;
+  align-content: start;
+}
+
+.mutedSmall {
+  color: var(--text-faint);
+  font-size: 0.9rem;
+}
+
+.newProjectForm {
+  display: grid;
+  gap: 7px;
+  margin: 10px 3px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-raised);
+}
+
+.newProjectForm label,
+.editor form > label,
+.fieldGrid label {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.newProjectForm input,
+.newProjectForm select,
+.editor input:not([type="checkbox"]),
+.editor textarea,
+.editor select {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 7px 9px;
+  color: var(--text);
+  background: var(--surface);
+  font: inherit;
+}
+
+.sidebarFooter {
+  display: grid;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 10px;
+}
+
+.navCount {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 0.9rem;
+}
+
+.syncStatus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  color: var(--text-faint);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.statusDot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 50%;
+  background: var(--success-dot);
+}
+
+.statussyncing .statusDot,
+.statuseror .statusDot,
+.statuserror .statusDot {
+  background: var(--warning-dot);
+}
+
+.statusoffline .statusDot,
+.statusreauth .statusDot {
+  background: var(--danger);
+}
+
+.main {
+  min-height: 100vh;
+  margin-left: 232px;
+}
+
+.topbar {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--border);
+  padding: 0 28px;
+  background: var(--surface);
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.breadcrumb span {
+  color: var(--border-strong);
+}
+
+.topbarActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.statusPill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-faint);
+  font-size: 0.9rem;
+}
+
+.statusPill .statusDot {
+  margin: 0;
+}
+
+.content {
+  width: min(100%, 1100px);
+  margin: 0 auto;
+  padding: 28px 28px 64px;
+}
+
+.contentHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 15px;
+}
+
+.eyebrow {
+  margin: 0 0 3px;
+  color: var(--text-faint);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.contentHeader h1 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+}
+
+.subtitle {
+  margin: 4px 0 0;
+  color: var(--text-faint);
+  font-size: 0.9rem;
+}
+
+.listControls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.completedToggle,
+.sortControl {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 0 8px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.completedToggle input,
+.checkboxField input,
+.taskMain input {
+  accent-color: var(--accent);
+}
+
+.sortControl select {
+  min-height: 26px;
+  border: 0;
+  padding: 2px 12px 2px 4px;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+.calendarPanel {
+  display: grid;
+  gap: 16px;
+}
+
+.calendarToolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.calendarToolbar h2 {
+  flex: 1;
+  margin: 0;
+  text-align: center;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.calendarModes {
+  display: flex;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.calendarModes button,
+.calendarModeActive {
+  min-height: 26px;
+  border: 0;
+  border-radius: 5px;
+  padding: 4px 9px;
+  color: var(--text-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.calendarModes .calendarModeActive {
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  font-weight: 650;
+}
+
+.calendarTable {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.calendarTable th {
+  padding: 8px 3px;
+  color: var(--text-faint);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.calendarTable td {
+  height: 68px;
+  border: 1px solid var(--border);
+  padding: 2px;
+  vertical-align: top;
+}
+
+.calendarDay {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 60px;
+  align-items: flex-start;
+  justify-content: space-between;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  padding: 6px;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.calendarDay:hover {
+  background: var(--hover);
+}
+
+.calendarDay.calendarSelected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.calendarDay.calendarOutside {
+  color: var(--text-faint);
+}
+
+.calendarCount {
+  display: grid;
+  min-width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 10px;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.calendarTasks {
+  display: grid;
+  gap: 10px;
+}
+
+.calendarTasks h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.settingsPanel {
+  display: grid;
+  width: min(100%, 560px);
+  gap: 9px;
+}
+
+.settingsPanel label {
+  margin-top: 9px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.settingsPanel select,
+.settingsPanel input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  padding: 8px 10px;
+  color: var(--text);
+  background: var(--surface);
+}
+
+.settingsPanel .formActions {
+  justify-content: flex-start;
+  margin-top: 18px;
+}
+
+.projectTools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -4px 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.projectTools span {
+  flex: 1;
+}
+
+.quickAdd {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 4px 5px 4px 10px;
+  background: var(--surface-raised);
+}
+
+.addMark {
+  color: var(--text-faint);
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.quickAdd input {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  border: 0;
+  outline: 0;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+}
+
+.quickAdd input::placeholder {
+  color: var(--text-faint);
+}
+
+.primaryButton,
+.smallPrimary {
+  min-height: 30px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 4px 12px;
+  color: white;
+  background: var(--accent);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.smallPrimary {
+  min-height: 28px;
+  padding: 3px 10px;
+  font-size: 0.9rem;
+}
+
+.primaryButton:hover,
+.smallPrimary:hover {
+  border-color: var(--accent-strong);
+  background: var(--accent-strong);
+}
+
+.taskList {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  list-style: none;
+}
+
+.taskRow {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+  padding: 0 10px;
+}
+
+.taskRow:hover {
+  background: var(--hover);
+}
+
+.taskRow:last-child {
+  border-bottom: 0;
+}
+
+.subtaskGroup {
+  width: 100%;
+  padding-left: 28px;
+}
+
+.subtaskList {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 0 0 0 12px;
+  border-left: 2px solid var(--border);
+  list-style: none;
+}
+
+.subtaskRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.subtaskEditor {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.subtaskEditor h3 {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.subtaskAdd {
+  display: flex;
+  gap: 8px;
+}
+
+.subtaskAdd input {
+  min-width: 0;
+}
+
+.taskMain {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.taskMain input {
+  appearance: none;
+  position: relative;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  margin: 0;
+  border: 1.5px solid var(--text-faint);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+
+.taskMain input:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.taskMain input:checked::after {
+  position: absolute;
+  inset: 2px 3px 4px 3px;
+  border: solid white;
+  border-width: 0 1.5px 1.5px 0;
+  content: "";
+  transform: rotate(45deg);
+}
+
+.taskTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.done {
+  color: var(--text-faint);
+  text-decoration: line-through;
+}
+
+.taskMeta {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-faint);
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.due {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.priority {
+  border-radius: 4px;
+  padding: 2px 5px;
+  color: var(--text-muted);
+  background: var(--hover);
+  font-size: 0.85rem;
+}
+
+.priority1 {
+  color: var(--priority-low);
+  background: var(--priority-low-bg);
+}
+.priority2 {
+  color: var(--priority-medium);
+  background: var(--priority-medium-bg);
+}
+.priority3 {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.textButton,
+.dangerButton,
+.iconButton,
+.menuButton {
+  min-height: 30px;
+  border: 0;
+  border-radius: 6px;
+  padding: 0 8px;
+  color: var(--text-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.textButton:hover,
+.iconButton:hover {
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+
+.dangerButton {
+  color: var(--danger);
+}
+
+.dangerButton:hover {
+  background: var(--danger-soft);
+}
+
+.iconButton {
+  min-width: 30px;
+  font-size: 1.12rem;
+  line-height: 1;
+}
+
+button:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+.emptyState {
+  display: grid;
+  justify-items: center;
+  margin-top: 30px;
+  padding: 36px 20px;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.emptyState h2 {
+  margin: 14px 0 5px;
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.emptyState p {
+  max-width: 26rem;
+  margin: 3px 0;
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+
+.emptyIcon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  font-size: 1.2rem;
+}
+
+.trashSections {
+  display: grid;
+  gap: 20px;
+}
+
+.sectionTitle {
+  margin: 0 0 8px;
+  color: var(--text-muted);
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.trashIcon {
+  display: inline-grid;
+  width: 18px;
+  flex: 0 0 18px;
+  place-items: center;
+  color: var(--text-faint);
+}
+
+.reauthBanner,
+.offlineBanner,
+.errorBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 28px;
+  font-size: 1rem;
+}
+
+.reauthBanner {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+.offlineBanner {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+.errorBanner {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(20 27 30 / 48%);
+}
+
+.editor {
+  width: min(100%, 480px);
+  max-height: min(90vh, 800px);
+  overflow: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 20px;
+  color: var(--text);
+  background: var(--surface);
+}
+
+.editorHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.editorHeading h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.editor form {
+  display: grid;
+  gap: 8px;
+}
+
+.editor input:not([type="checkbox"]),
+.editor select,
+.editor textarea {
+  margin-bottom: 8px;
+}
+
+.editor textarea {
+  resize: vertical;
+}
+
+.checkboxField {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 3px 0 7px;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.tagChoices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 13px;
+  min-width: 0;
+  margin: 4px 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.tagChoices legend {
+  padding: 0 4px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.tagChoices .checkboxField {
+  margin: 0;
+}
+
+.tagManagerRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 7px;
+}
+
+.fieldGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.fieldGrid > div {
+  display: grid;
+  gap: 7px;
+}
+
+.formActions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+.loading {
+  position: fixed;
+  right: 18px;
+  bottom: 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 9px;
+  color: var(--text-faint);
+  background: var(--surface);
+  font-size: 0.9rem;
+}
+
+.mobileHeader,
+.backdrop {
+  display: none;
+}
+
+:global(button:focus-visible),
+:global(input:focus-visible),
+:global(select:focus-visible),
+:global(textarea:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 900px) {
+  .sidebar {
+    width: 220px;
+  }
+  .main {
+    margin-left: 220px;
+  }
+  .content {
+    padding-right: 24px;
+    padding-left: 24px;
+  }
+  .topbar {
+    padding-right: 24px;
+    padding-left: 24px;
+  }
+  .contentHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .listControls {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 640px) {
+  .mobileHeader {
+    position: sticky;
+    top: 0;
+    z-index: 15;
+    display: flex;
+    height: 56px;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid var(--border);
+    padding: 0 8px;
+    background: var(--surface);
+  }
+  .mobileBrand {
+    flex: 1;
+    font-size: 1.15rem;
+    font-weight: 600;
+  }
+  .menuButton {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    font-size: 1.15rem;
+  }
+  .sidebar {
+    top: 56px;
+    z-index: 30;
+    width: min(84vw, 300px);
+    padding: 12px 10px 10px;
+    transform: translateX(-105%);
+    transition: transform 160ms ease-out;
+  }
+  .sidebarOpen {
+    transform: translateX(0);
+  }
+  .sidebar .navItem,
+  .sidebar .projectLink {
+    min-height: 44px;
+    padding: 0 10px;
+  }
+  .backdrop {
+    position: fixed;
+    inset: 56px 0 0;
+    z-index: 25;
+    display: block;
+    border: 0;
+    background: rgb(10 15 20 / 36%);
+  }
+  .main {
+    margin-left: 0;
+  }
+  .topbar {
+    display: none;
+  }
+  .content {
+    padding: 24px 16px 48px;
+  }
+  .contentHeader {
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .contentHeader h1 {
+    font-size: 1.25rem;
+  }
+  .listControls {
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .completedToggle {
+    min-height: 44px;
+    white-space: normal;
+  }
+  .sortControl {
+    min-height: 44px;
+  }
+  .sortControl select {
+    min-height: 40px;
+  }
+  .quickAdd {
+    min-height: 48px;
+    gap: 7px;
+    padding-left: 8px;
+  }
+  .quickAdd input {
+    height: 36px;
+  }
+  .quickAdd .smallPrimary {
+    min-height: 44px;
+    padding: 5px 8px;
+  }
+  .taskList,
+  .subtaskList {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .taskRow {
+    min-width: 0;
+    min-height: 56px;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0 6px;
+    padding: 5px 8px;
+  }
+  .taskMain {
+    width: auto;
+    min-height: 44px;
+  }
+  .taskTitle {
+    min-width: 0;
+  }
+  .taskMeta {
+    width: auto;
+    min-height: 44px;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+  .taskMeta .textButton,
+  .taskMeta .dangerButton,
+  .taskMeta .iconButton {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .taskMeta .due {
+    margin-right: auto;
+  }
+  .subtaskGroup,
+  .subtaskRow {
+    min-width: 0;
+  }
+  .subtaskRow .taskMain {
+    width: auto;
+    min-height: 44px;
+  }
+  .subtaskRow .taskMeta {
+    width: auto;
+    min-height: 44px;
+  }
+  .projectTools {
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  .projectTools span {
+    flex-basis: 100%;
+    margin-bottom: 4px;
+  }
+  .fieldGrid {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .calendarToolbar {
+    flex-wrap: wrap;
+  }
+  .calendarToolbar h2 {
+    order: -1;
+    flex-basis: 100%;
+  }
+  .calendarTable td {
+    height: 58px;
+    padding: 1px;
+  }
+  .calendarDay {
+    min-height: 54px;
+    padding: 4px;
+  }
+  .calendarCount {
+    min-width: 18px;
+    height: 18px;
+  }
+  .textButton,
+  .dangerButton,
+  .iconButton,
+  .smallPrimary,
+  .primaryButton,
+  .calendarModes button,
+  .calendarModeActive {
+    min-height: 44px;
+  }
+  .newProjectForm input,
+  .newProjectForm select,
+  .editor input:not([type="checkbox"]),
+  .editor textarea,
+  .editor select,
+  .settingsPanel select,
+  .settingsPanel input {
+    min-height: 44px;
+  }
+  .checkboxField {
+    min-height: 44px;
+  }
+  .reauthBanner,
+  .offlineBanner,
+  .errorBanner {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 12px 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar {
+    transition: none;
+  }
+}

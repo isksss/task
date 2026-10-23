@@ -1,0 +1,96 @@
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  color-scheme: light;
+  font-family: Inter, system-ui, "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", sans-serif;
+  font-size: 13px;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  --canvas: #ffffff;
+  --surface: #ffffff;
+  --surface-raised: #f7f8f9;
+  --text: #1b1c1f;
+  --text-muted: #5b5e66;
+  --text-faint: #6b6f76;
+  --border: #e6e7ea;
+  --border-strong: #d1d3d8;
+  --hover: #f2f3f5;
+  --selected: #eef0f3;
+  --accent: #5e6ad2;
+  --accent-strong: #4c56c0;
+  --accent-soft: #eef0ff;
+  --focus: #4c56c0;
+  --success: #287a54;
+  --success-dot: #4cb782;
+  --warning: #8b4b0a;
+  --warning-dot: #f2994a;
+  --warning-soft: #fff3e5;
+  --danger: #b4232d;
+  --danger-soft: #fff0f0;
+  --priority-low: #45619b;
+  --priority-low-bg: #edf2fb;
+  --priority-medium: #805000;
+  --priority-medium-bg: #fff4df;
+  color: var(--text);
+  background: var(--canvas);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --canvas: #0f1011;
+    --surface: #121315;
+    --surface-raised: #141517;
+    --text: #edeef0;
+    --text-muted: #b4b6bc;
+    --text-faint: #8a8d96;
+    --border: #1f2023;
+    --border-strong: #26272b;
+    --hover: #17181b;
+    --selected: #1c1d21;
+    --accent-strong: #a5abf2;
+    --accent-soft: #22243d;
+    --focus: #7c83e8;
+    --success: #4cb782;
+    --warning: #f2994a;
+    --warning-soft: #30251b;
+    --danger: #ff8585;
+    --danger-soft: #402729;
+    --priority-low: #a5abf2;
+    --priority-low-bg: #23283b;
+    --priority-medium: #f2c66d;
+    --priority-medium-bg: #382f20;
+  }
+}
+
+html {
+  min-width: 320px;
+  min-height: 100%;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background: var(--canvas);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  touch-action: manipulation;
+}
+
+::selection {
+  color: var(--text);
+  background: var(--accent-soft);
+}
