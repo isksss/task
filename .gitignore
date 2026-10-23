@@ -4,6 +4,8 @@ apps/api/public/
 .wrangler/
 .cloudflare/
 coverage/
+/test-results/
+/playwright-report/
 .dev.vars
 .vapid-secrets*
 .env

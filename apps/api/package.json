@@ -5,8 +5,8 @@
   "scripts": {
     "dev": "cf dev --mode development",
     "build": "cf build --mode development",
-    "deploy:staging": "cf deploy --mode staging",
-    "deploy:production": "TASK_ALLOW_PRODUCTION_DEPLOY=1 cf deploy --mode production",
+    "deploy:staging": "cf deploy --mode staging --secrets-file ../../.vapid-secrets.json",
+    "deploy:production": "TASK_ALLOW_PRODUCTION_DEPLOY=1 cf deploy --mode production --secrets-file ../../.vapid-secrets.json",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run --mode test"
   },

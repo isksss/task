@@ -201,10 +201,19 @@ export function syncNow(
     return active;
   }
   const operation = (async () => {
+    let failed = false;
+    let lastError: unknown;
     do {
       rerunRequested.delete(database);
-      await runSync(database, fetcher, onStatus);
+      try {
+        await runSync(database, fetcher, onStatus);
+        failed = false;
+      } catch (error) {
+        failed = true;
+        lastError = error;
+      }
     } while (rerunRequested.has(database));
+    if (failed) throw lastError;
   })().finally(() => {
     locks.delete(database);
     rerunRequested.delete(database);
@@ -237,14 +246,17 @@ export function startSyncLoop(
   const onVisibility = () => {
     if (document.visibilityState === "visible") run();
   };
+  const onOnline = () => run();
   run();
   const interval = window.setInterval(() => {
     if (document.visibilityState === "visible") run();
   }, 30_000);
   document.addEventListener("visibilitychange", onVisibility);
+  window.addEventListener("online", onOnline);
   return () => {
     window.clearInterval(interval);
     document.removeEventListener("visibilitychange", onVisibility);
+    window.removeEventListener("online", onOnline);
     const timer = debounceTimers.get(database);
     if (timer) clearTimeout(timer);
     debounceTimers.delete(database);

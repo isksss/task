@@ -16,21 +16,23 @@ pnpm typecheck
 pnpm build
 pnpm test
 pnpm smoke
+pnpm e2e
 ```
 
-`pnpm smoke` は web をビルドし、development mode でローカル D1 migration を適用してから `cf dev` の HTTP 動作を確認します。Cloudflare へのログインは不要です。
+`pnpm smoke` は web をビルドし、development mode でローカル D1 migration を適用してから `cf dev` の HTTP 動作を確認します。`pnpm e2e` は同じ一時 D1 環境に Chromium で接続し、ブラウザー操作と同期を検証します。初回は `pnpm exec playwright install chromium` でブラウザーを導入してください。どちらも Cloudflare へのログインは不要です。
 
 API のテストは `@cloudflare/vitest-plugin`（`1.4.6`）を使い、`cloudflare.config.ts` の設定を読み込んで Miniflare 上のローカル D1 で動きます。テストでは `remoteBindings: false` とし、Cloudflare ログインを必要としません。
 
 ## デプロイ
 
-Cloudflare にログインした状態で、対象環境の D1 migration を適用してから Worker をデプロイしてください。リモート migration では `--local` を付けません。
+Cloudflare にログインした状態で、対象環境の D1 migration を適用してから Worker をデプロイしてください。リモート migration では `--local` を付けません。deploy scripts は毎回 `.vapid-secrets.json` を `--secrets-file` として渡すため、ファイルを用意してから実行してください（生成方法は「Web Push」を参照）。secret を渡さない `cf deploy` は登録済み Worker secret を削除します。
 
 ### staging
 
 ```sh
 pnpm --filter @task/api exec cf d1 migrations apply 68a0f133-e48d-45a5-9edc-5a361a37bb07 --dir migrations --mode staging
 pnpm --filter @task/api deploy:staging
+pnpm --filter @task/api exec cf workers secrets list --worker task-api-staging
 ```
 
 ### production
@@ -38,11 +40,10 @@ pnpm --filter @task/api deploy:staging
 ```sh
 pnpm --filter @task/api exec cf d1 migrations apply de04dcfd-4fb3-441c-89c0-868f5a47730c --dir migrations --mode production
 pnpm --filter @task/api deploy:production
+pnpm --filter @task/api exec cf workers secrets list --worker task-api
 ```
 
-`deploy:production` は誤操作防止のため `TASK_ALLOW_PRODUCTION_DEPLOY=1` を設定します。このフラグは強制的なアクセス制御ではありません。環境変数を設定できる利用者は他のコマンドからも production を実行できるため、権限管理は Cloudflare 側で行ってください。
-
-Push 用の VAPID secret は通常の deploy 後に登録します。`cf` CLI に個別の secret 登録コマンドはなく、`--secrets-file` 付きの `cf deploy` を再実行するため、詳しくは「Web Push」を参照してください。
+デプロイ後、`cf workers secrets list --worker <name>` で `VAPID_PRIVATE_KEY` が残っていることを確認してください。`deploy:production` は誤操作防止のため `TASK_ALLOW_PRODUCTION_DEPLOY=1` を設定します。このフラグは強制的なアクセス制御ではありません。環境変数を設定できる利用者は他のコマンドからも production を実行できるため、権限管理は Cloudflare 側で行ってください。
 
 ## D1
 
@@ -56,15 +57,11 @@ pnpm --filter @task/api exec cf d1 migrations apply 00000000-0000-4000-8000-0000
 
 ## Web Push
 
-開発・テストではローカル専用の固定鍵を使います。staging / production で通知を使う場合は、deploy 後に VAPID 秘密鍵を Worker secret `VAPID_PRIVATE_KEY` として登録してください。公開鍵は `GET /api/push/vapid-public-key` から取得されます。秘密鍵は JSON JWK 形式です。この `cf` CLI では `--secrets-file` 付きの `cf deploy` が secret の登録と Worker の再デプロイを兼ねます。
+開発・テストではローカル専用の固定鍵を使います。staging / production で通知を使う場合、VAPID 秘密鍵（JSON JWK 形式）を Worker secret `VAPID_PRIVATE_KEY` として登録します。公開鍵は `GET /api/push/vapid-public-key` から取得されます。deploy scripts は毎回 `.vapid-secrets.json` を `--secrets-file` として渡すので、ファイルが無い場合は次の手順で生成してください。
 
 ```sh
 umask 077
 node scripts/generate-vapid-key.mjs > .vapid-secrets.json
-pnpm --filter @task/api exec cf deploy --mode staging --secrets-file ../../.vapid-secrets.json
-TASK_ALLOW_PRODUCTION_DEPLOY=1 pnpm --filter @task/api exec cf deploy --mode production --secrets-file ../../.vapid-secrets.json
 ```
 
-**注意**: `--secrets-file` なしの `cf deploy`（`deploy:staging` / `deploy:production` を含む）は登録済み secret を削除します。secret 登録後は毎回 `--secrets-file` を付けて deploy し、`cf workers secrets list --worker <name>` で残っていることを確認してください。
-
-`.vapid-secrets.json` は Git 管理対象外です。鍵の再生成・変更時は既存の Push 購読との互換性を保つため、鍵を失効させる影響を確認してください。staging / production で secret が未設定または不正な場合、Push 送信はスキップしてログに記録されます。
+`.vapid-secrets.json` は Git 管理対象外です。deploy 後は「デプロイ」に記載した `cf workers secrets list --worker <name>` で `VAPID_PRIVATE_KEY` を確認してください。鍵の再生成・変更時は既存の Push 購読との互換性を保つため、鍵を失効させる影響を確認してください。staging / production で secret が未設定または不正な場合、Push 送信はスキップしてログに記録されます。

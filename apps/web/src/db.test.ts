@@ -455,6 +455,33 @@ describe("sync loop", () => {
     expect(await database.outbox.count()).toBe(0);
   });
 
+  it("reruns after a failed sync when another caller requested it", async () => {
+    const database = await testDb();
+    await createTask("queued change", null, database);
+    let rejectFirst!: (reason: unknown) => void;
+    let firstStarted!: () => void;
+    const started = new Promise<void>((resolve) => { firstStarted = resolve; });
+    const firstAttempt = new Promise<Response>((_resolve, reject) => { rejectFirst = reject; });
+    const lastError = new Error("second attempt failed");
+    let calls = 0;
+    const fetcher = (async () => {
+      calls += 1;
+      if (calls === 1) {
+        firstStarted();
+        return firstAttempt;
+      }
+      throw lastError;
+    }) as typeof fetch;
+
+    const firstSync = syncNow(database, fetcher);
+    await started;
+    const rerunSync = syncNow(database, fetcher);
+    rejectFirst(new Error("first attempt failed"));
+    await expect(firstSync).rejects.toBe(lastError);
+    expect(rerunSync).toBe(firstSync);
+    expect(calls).toBe(2);
+  });
+
   it("waits for the active sync without scheduling another sync", async () => {
     const database = await testDb();
     await createTask("waiting task", null, database);

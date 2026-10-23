@@ -10,7 +10,7 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const apiDir = join(root, "apps", "api");
 const cfBin = join(root, "node_modules", ".bin", "cf");
 const databaseId = "00000000-0000-4000-8000-000000000000";
-const timeoutMs = 240_000;
+const timeoutMs = process.argv.includes("--e2e") ? 600_000 : 240_000;
 const portTimeoutMs = 30_000;
 const migrationTimeoutMs = 30_000;
 const maxMigrationRetries = 3;
@@ -124,6 +124,7 @@ async function applyLocalMigrations(args, cwd, signal) {
       const persistenceArg = args.indexOf("--persist-to");
       await rm(persistenceDir, { recursive: true, force: true });
       persistenceDir = await mkdtemp(join(tmpdir(), "task-smoke-"));
+      process.env.TASK_LOCAL_PERSIST_STATE = persistenceDir;
       args[persistenceArg + 1] = persistenceDir;
       console.warn(`Local D1 migrations timed out on attempt ${attempt}; process group stopped, retrying.`);
     }
@@ -189,6 +190,7 @@ let server;
 let phase = "setup";
 try {
   persistenceDir = await mkdtemp(join(tmpdir(), "task-smoke-"));
+  process.env.TASK_LOCAL_PERSIST_STATE = persistenceDir;
   phase = "web build";
   await runCommand("pnpm", ["--filter", "@task/web", "build"], root, controller.signal);
   phase = "local D1 migrations";
@@ -286,6 +288,12 @@ try {
   assert.deepEqual(await missing.json(), { error: "not_found" });
 
   console.log("Smoke test passed: app shell, PWA assets, API health/cache policy, and JSON API 404.");
+  if (process.argv.includes("--e2e")) {
+    phase = "Playwright E2E";
+    process.env.E2E_BASE_URL = baseUrl;
+    await runCommand("pnpm", ["exec", "playwright", "test"], root, controller.signal);
+    console.log("Playwright E2E tests passed.");
+  }
 } catch (error) {
   if (controller.signal.aborted) console.error(`Smoke timed out during ${phase}.`);
   console.error(error);

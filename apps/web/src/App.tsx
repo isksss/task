@@ -11,6 +11,7 @@ import {
   type Project,
   type Recurrence,
   type Task,
+  type TaskFields,
   type TaskSort,
   type TaskTag,
   type Tag,
@@ -37,7 +38,7 @@ import {
 import { downloadExport, requestExportAfterSync } from "./export";
 import { clearDeviceDataConfirmation, dictionaries, getDefaultLocale, type Translation } from "./i18n";
 import { firstDayOfWeek, getMonthGridDates, getWeekDates, shiftCalendarDate, shiftCalendarMonth } from "./calendar";
-import { weeklyRecurrenceNeedsWeekday } from "./recurrence-form";
+import { sameRecurrence, weeklyRecurrenceNeedsWeekday } from "./recurrence-form";
 import { ReauthenticationRequired, startSyncLoop, syncNow, syncSoon, waitForSync, type SyncStatus } from "./sync";
 import { disablePush, enablePush, pushAvailability, registerExistingPushSubscription } from "./push";
 import styles from "./App.module.css";
@@ -413,18 +414,25 @@ export default function App() {
         : frequency === "monthly" ? { frequency, day: Number(form.get("monthly_day")) }
             : frequency === "yearly" ? { frequency }
               : null;
+    const title = String(form.get("title") ?? "");
+    const done = form.get("done") === "on";
+    const dueDateValue = dueDate || null;
+    const dueTimeValue = dueTime || null;
+    const note = String(form.get("note") ?? "");
+    const priority = Number(form.get("priority")) as Task["priority"];
+    const projectIdValue = projectId || null;
+    const patch: Partial<TaskFields> = {};
+    if (title !== task.title) patch.title = title;
+    if (done !== task.done) patch.done = done;
+    if (dueDateValue !== task.due_date) patch.due_date = dueDateValue;
+    if (dueTimeValue !== task.due_time) patch.due_time = dueTimeValue;
+    if (note !== task.note) patch.note = note;
+    if (priority !== task.priority) patch.priority = priority;
+    if (projectIdValue !== task.project_id) patch.project_id = projectIdValue;
+    if (!sameRecurrence(recurrence, task.recurrence)) patch.recurrence = recurrence;
     const selectedTags = form.getAll("tag_ids").map(String);
     void act(async () => {
-      await updateTask(task.id, {
-        title: String(form.get("title") ?? ""),
-        done: form.get("done") === "on",
-        due_date: dueDate || null,
-        due_time: dueTime || null,
-        note: String(form.get("note") ?? ""),
-        priority: Number(form.get("priority")) as Task["priority"],
-        project_id: projectId || null,
-        recurrence,
-      });
+      if (Object.keys(patch).length > 0) await updateTask(task.id, patch);
       await Promise.all([...new Set([...editingTags, ...selectedTags])].map((tagId) =>
         setTaskTag(task.id, tagId, selectedTags.includes(tagId)),
       ));

@@ -11,9 +11,11 @@
     "build": "pnpm --filter @task/web build && pnpm --filter @task/api build",
     "test": "pnpm --filter @task/api test && pnpm --filter @task/web test",
     "smoke": "node scripts/smoke.mjs",
+    "e2e": "node scripts/smoke.mjs --e2e",
     "check:prod-guard": "node scripts/check-prod-guard.mjs"
   },
   "devDependencies": {
+    "@playwright/test": "1.64.1",
     "cf": "0.15.0",
     "typescript": "5.9.3"
   }
