@@ -8,7 +8,6 @@ const team = "test.cloudflareaccess.com";
 const audience = "test-audience";
 const allowedEmail = "allowed@example.com";
 let signingKey: CryptoKeyPair;
-let otherKey: CryptoKeyPair;
 let publicJwk: JsonWebKey & { kid?: string; alg?: string; use?: string };
 
 function base64url(bytes: Uint8Array): string {
@@ -60,28 +59,16 @@ async function requestToken(token: string, workerEnv = accessEnv()) {
 }
 
 beforeAll(async () => {
-  [signingKey, otherKey] = await Promise.all([
-    crypto.subtle.generateKey(
-      {
-        name: "RSASSA-PKCS1-v1_5",
-        modulusLength: 2048,
-        publicExponent: Uint8Array.of(1, 0, 1),
-        hash: "SHA-256",
-      },
-      true,
-      ["sign", "verify"],
-    ),
-    crypto.subtle.generateKey(
-      {
-        name: "RSASSA-PKCS1-v1_5",
-        modulusLength: 2048,
-        publicExponent: Uint8Array.of(1, 0, 1),
-        hash: "SHA-256",
-      },
-      true,
-      ["sign", "verify"],
-    ),
-  ]);
+  signingKey = await crypto.subtle.generateKey(
+    {
+      name: "RSASSA-PKCS1-v1_5",
+      modulusLength: 2048,
+      publicExponent: Uint8Array.of(1, 0, 1),
+      hash: "SHA-256",
+    },
+    true,
+    ["sign", "verify"],
+  );
   publicJwk = (await crypto.subtle.exportKey("jwk", signingKey.publicKey)) as typeof publicJwk;
   publicJwk.kid = "test-key";
   publicJwk.alg = "RS256";

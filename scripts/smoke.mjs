@@ -186,7 +186,7 @@ async function waitForHttpReady(url, child, signal) {
       });
       await response.body?.cancel();
       if (response.status === 200) return;
-    } catch (error) {
+    } catch {
       if (signal.aborted) throw signal.reason;
     }
     await sleep(200, signal);

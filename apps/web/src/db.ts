@@ -15,13 +15,11 @@ import {
   type Project,
   type ProjectFields,
   type RejectedChange,
-  type Recurrence,
   type SyncEntity,
   type SyncRow,
   type Task,
   type TaskFields,
   type TaskTag,
-  type TaskTagFields,
   type Tag,
   type TagFields,
   type Tombstone,
@@ -1046,7 +1044,7 @@ export async function applySyncData(
       ) => {
         const local = await table.get(id);
         const value = { ...(local ?? fields) } as T;
-        const mergedFieldTs = { ...(local?.field_ts ?? {}) } as FieldTimestamps<T>;
+        const mergedFieldTs = { ...local?.field_ts } as FieldTimestamps<T>;
         const unsentFields = pendingFields.get(`${entity}:${id}`);
         for (const key of Object.keys(fieldTs) as (keyof T)[]) {
           const hlc = fieldTs[key];
