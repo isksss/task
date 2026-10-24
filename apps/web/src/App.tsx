@@ -533,10 +533,40 @@ export default function App() {
       defaultPriority,
     );
     void act(async () => {
-      await createTask(title, projectId, db, null, priority);
+      await createTask(
+        title,
+        projectId,
+        db,
+        null,
+        priority,
+        view === "calendar" ? focusedCalendarDate : null,
+      );
       setQuickTitle("");
     });
   };
+
+  const quickAddForm = (
+    <form className={styles.quickAdd} onSubmit={submitQuickTask}>
+      <span className={styles.addMark} aria-hidden="true">
+        ＋
+      </span>
+      <label className={styles.srOnly} htmlFor="quick-task-title">
+        {t.taskTitle}
+      </label>
+      <input
+        id="quick-task-title"
+        type="text"
+        value={quickTitle}
+        onChange={(event) => setQuickTitle(event.target.value)}
+        placeholder={t.addTask}
+        maxLength={MAX_TITLE_LENGTH}
+        required
+      />
+      <button type="submit" className={styles.smallPrimary}>
+        {t.addTask}
+      </button>
+    </form>
+  );
 
   const submitTaskEdit = (event: FormEvent<HTMLFormElement>, task: Task) => {
     event.preventDefault();
@@ -1221,28 +1251,7 @@ export default function App() {
               </div>
             )}
 
-          {view !== "trash" && view !== "calendar" && view !== "settings" && (
-            <form className={styles.quickAdd} onSubmit={submitQuickTask}>
-              <span className={styles.addMark} aria-hidden="true">
-                ＋
-              </span>
-              <label className={styles.srOnly} htmlFor="quick-task-title">
-                {t.taskTitle}
-              </label>
-              <input
-                id="quick-task-title"
-                type="text"
-                value={quickTitle}
-                onChange={(event) => setQuickTitle(event.target.value)}
-                placeholder={t.addTask}
-                maxLength={MAX_TITLE_LENGTH}
-                required
-              />
-              <button type="submit" className={styles.smallPrimary}>
-                {t.addTask}
-              </button>
-            </form>
-          )}
+          {view !== "trash" && view !== "calendar" && view !== "settings" && quickAddForm}
 
           {view === "trash" ? (
             <div className={styles.trashSections}>
@@ -1491,6 +1500,7 @@ export default function App() {
                     {fullDateFormatter.format(new Date(`${focusedCalendarDate}T12:00:00Z`))}
                   </time>
                 </h2>
+                {quickAddForm}
                 {selectedDayTasks.length > 0 ? (
                   <ul className={styles.taskList} aria-label={t.selectedDayTasks}>
                     {selectedDayTasks.map((task) => renderRegularTask(task, false))}

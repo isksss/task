@@ -492,3 +492,28 @@ test("downloads a JSON export containing the latest saved task fields", async ({
     done: false,
   });
 });
+
+for (const mode of ["月", "週"]) {
+  test(`creates a task on the selected calendar date in ${mode} view`, async ({ page }) => {
+    await openApp(page);
+    await page.getByRole("button", { name: "カレンダー", exact: true }).click();
+    await page.getByRole("button", { name: mode, exact: true }).click();
+    await page.getByRole("table").getByRole("button").nth(2).click();
+    const selectedDate = await page.locator("#selected-day-tasks time").getAttribute("datetime");
+    expect(selectedDate).toBeTruthy();
+    const title = newTitle("e2e-calendar");
+    await page.getByRole("textbox", { name: "タスク名", exact: true }).fill(title);
+    const synced = waitForSyncResponse(page, { fields: { title, due_date: selectedDate } });
+    await page.getByRole("button", { name: "タスクを追加", exact: true }).click();
+    const list = page.getByRole("list", { name: "選択した日のタスク", exact: true });
+    await expect(list.getByText(title, { exact: true })).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "タスク名", exact: true })).toHaveValue("");
+    expect((await synced).ok()).toBe(true);
+    await page.reload();
+    await page.getByRole("button", { name: "すべて", exact: true }).click();
+    await taskRow(page, title).getByRole("button", { name: "編集", exact: true }).click();
+    await expect(page.getByRole("dialog").getByLabel("期限日", { exact: true })).toHaveValue(
+      selectedDate!,
+    );
+  });
+}

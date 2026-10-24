@@ -73,6 +73,22 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("local database", () => {
+  it("creates a dated task and queues its due date in the initial sync change", async () => {
+    const database = await testDb();
+    const task = await createTask("Calendar task", null, database, null, 2, "2028-02-29");
+    expect(await database.tasks.get(task.id)).toMatchObject({
+      due_date: "2028-02-29",
+      priority: 2,
+    });
+    expect(await database.outbox.toArray()).toMatchObject([
+      { id: task.id, fields: { due_date: { v: "2028-02-29" } } },
+    ]);
+    await expect(
+      createTask("Invalid date", null, database, null, 0, "2028-02-30"),
+    ).rejects.toThrow();
+    expect(await database.tasks.count()).toBe(1);
+  });
+
   it("persists a device ID and stores local writes with their versioned outbox change", async () => {
     const database = await testDb();
     const task = await createTask("Plan the week", null, database);

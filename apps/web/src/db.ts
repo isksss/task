@@ -349,12 +349,14 @@ export async function createTask(
   database = db,
   parentTaskId: string | null = null,
   priority: Task["priority"] = 0,
+  dueDate: string | null = null,
 ): Promise<Task> {
   const normalizedTitle = title.trim();
   if (!normalizedTitle || [...normalizedTitle].length > MAX_TITLE_LENGTH) {
     throw new RangeError(`Task title must contain 1-${MAX_TITLE_LENGTH} characters`);
   }
   if (![0, 1, 2, 3].includes(priority)) throw new RangeError("Invalid priority");
+  if (dueDate !== null && !dateIsValid(dueDate)) throw new RangeError("Invalid due date");
   return database.transaction(
     "rw",
     database.tasks,
@@ -378,7 +380,7 @@ export async function createTask(
         title: normalizedTitle,
         note: "",
         done: false,
-        due_date: null,
+        due_date: dueDate,
         due_time: null,
         priority,
         created_at: defaults.created_at,
