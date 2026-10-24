@@ -1067,11 +1067,22 @@ export async function applySyncData(
         fields: T,
         fieldTs: FieldTimestamps<T>,
         seq: number,
+        replace = false,
       ) => {
         const local = await table.get(id);
-        const value = { ...(local ?? fields) } as T;
-        const mergedFieldTs = { ...local?.field_ts } as FieldTimestamps<T>;
+        const value = { ...(replace ? fields : (local ?? fields)) } as T;
+        const mergedFieldTs = { ...(replace ? fieldTs : local?.field_ts) } as FieldTimestamps<T>;
         const unsentFields = pendingFields.get(`${entity}:${id}`);
+        // A rejection resets sent fields, but must keep edits queued while the request was in flight.
+        if (replace && local && unsentFields) {
+          for (const field of unsentFields) {
+            const key = field as keyof T;
+            value[key] = local[key];
+            const clock = local.field_ts[key];
+            if (clock) mergedFieldTs[key] = clock;
+            else delete mergedFieldTs[key];
+          }
+        }
         for (const key of Object.keys(fieldTs) as (keyof T)[]) {
           const hlc = fieldTs[key];
           if (!hlc || unsentFields?.has(String(key))) continue;
@@ -1142,31 +1153,55 @@ export async function applySyncData(
         }
         if (row.entity === "task") {
           const { entity: _entity, ...task } = row;
-          await database.tasks.put(task);
+          await saveRemote(database.tasks, "task", task.id, task, task.field_ts, task.seq, true);
           for (const clock of Object.values(task.field_ts)) {
             if (clock && (!latest || compareHlc(clock, latest) > 0)) latest = clock;
           }
         } else if (row.entity === "project") {
           const { entity: _entity, ...project } = row;
-          await database.projects.put(project);
+          await saveRemote(
+            database.projects,
+            "project",
+            project.id,
+            project,
+            project.field_ts,
+            project.seq,
+            true,
+          );
           for (const clock of Object.values(project.field_ts)) {
             if (clock && (!latest || compareHlc(clock, latest) > 0)) latest = clock;
           }
         } else if (row.entity === "tag") {
           const { entity: _entity, ...tag } = row;
-          await database.tags.put(tag);
+          await saveRemote(database.tags, "tag", tag.id, tag, tag.field_ts, tag.seq, true);
           for (const clock of Object.values(tag.field_ts)) {
             if (clock && (!latest || compareHlc(clock, latest) > 0)) latest = clock;
           }
         } else if (row.entity === "task_tag") {
           const { entity: _entity, ...taskTag } = row;
-          await database.taskTags.put(taskTag);
+          await saveRemote(
+            database.taskTags,
+            "task_tag",
+            taskTag.id,
+            taskTag,
+            taskTag.field_ts,
+            taskTag.seq,
+            true,
+          );
           for (const clock of Object.values(taskTag.field_ts)) {
             if (clock && (!latest || compareHlc(clock, latest) > 0)) latest = clock;
           }
         } else {
           const { entity: _entity, ...settings } = row;
-          await database.settings.put({ ...settings, id: SETTINGS_ID });
+          await saveRemote(
+            database.settings,
+            "settings",
+            SETTINGS_ID,
+            settings,
+            settings.field_ts,
+            settings.seq,
+            true,
+          );
           for (const clock of Object.values(settings.field_ts)) {
             if (clock && (!latest || compareHlc(clock, latest) > 0)) latest = clock;
           }

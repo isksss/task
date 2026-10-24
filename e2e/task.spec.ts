@@ -298,3 +298,93 @@ test("keeps concurrent edits to different task fields", async ({ page, browser }
     await otherContext.close();
   }
 });
+
+test("keeps an unsynced task through authentication failure and reload, then syncs it", async ({
+  page,
+  browser,
+}) => {
+  await openApp(page);
+  const title = newTitle("e2e-reauth");
+  await page.route("**/api/sync", (route) =>
+    route.fulfill({
+      status: 401,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "unauthorized" }),
+    }),
+  );
+  await page.getByRole("textbox", { name: "タスク名", exact: true }).fill(title);
+  const rejected = waitForSyncResponse(page, { fields: { title } });
+  await page.getByRole("button", { name: "タスクを追加", exact: true }).click();
+  expect((await rejected).status()).toBe(401);
+  await expect(taskRow(page, title)).toBeVisible();
+  await expect(page.getByText("再ログインが必要です。", { exact: true }).first()).toBeVisible();
+
+  const rejectedReload = waitForSyncResponse(page, { fields: { title } });
+  await page.reload();
+  expect((await rejectedReload).status()).toBe(401);
+  await expect(taskRow(page, title)).toBeVisible();
+  await page.unroute("**/api/sync");
+  const recovered = waitForSyncResponse(page, { fields: { title } });
+  await page.reload();
+  expect((await recovered).ok()).toBe(true);
+  await waitUntilSynced(page);
+
+  const otherContext = await browser.newContext({
+    locale: "ja-JP",
+    timezoneId: "Asia/Tokyo",
+    serviceWorkers: "block",
+  });
+  try {
+    const otherPage = await otherContext.newPage();
+    await openApp(otherPage);
+    await expect(taskRow(otherPage, title)).toHaveCount(1);
+  } finally {
+    await otherContext.close();
+  }
+});
+
+test("cancels permanent deletion, then confirms it and persists deletion after reload", async ({
+  page,
+}) => {
+  await openApp(page);
+  const title = newTitle("e2e-purge");
+  const taskId = await addTask(page, title);
+  const deleted = waitForSyncResponse(page, {
+    id: taskId,
+    fields: { deleted_at: (value) => typeof value === "string" },
+  });
+  await taskRow(page, title)
+    .getByRole("button", { name: `「${title}」をゴミ箱へ移動` })
+    .click();
+  expect((await deleted).ok()).toBe(true);
+  await page.getByRole("button", { name: /^ゴミ箱/ }).click();
+  const row = page.getByRole("listitem").filter({ hasText: title });
+  await expect(row).toBeVisible();
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await row.getByRole("button", { name: "完全削除", exact: true }).click();
+  await expect(row).toBeVisible();
+  const retained = waitForPullResponse(page);
+  await page.reload();
+  expect((await retained).ok()).toBe(true);
+  await waitUntilSynced(page);
+  await page.getByRole("button", { name: /^ゴミ箱/ }).click();
+  await expect(row).toBeVisible();
+
+  page.once("dialog", (dialog) => dialog.accept());
+  const purged = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === "/api/trash/purge" &&
+      response.request().postDataJSON().id === taskId,
+  );
+  await row.getByRole("button", { name: "完全削除", exact: true }).click();
+  expect((await purged).ok()).toBe(true);
+  await expect(row).toHaveCount(0);
+  await waitUntilSynced(page);
+  const reloaded = waitForPullResponse(page);
+  await page.reload();
+  expect((await reloaded).ok()).toBe(true);
+  await waitUntilSynced(page);
+  await expect(taskRow(page, title)).toHaveCount(0);
+  await page.getByRole("button", { name: /^ゴミ箱/ }).click();
+  await expect(row).toHaveCount(0);
+});

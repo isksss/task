@@ -1,7 +1,13 @@
 import "fake-indexeddb/auto";
 import Dexie from "dexie";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { compareHlc, HLC_FUTURE_TOLERANCE_MS, recurringTaskId, type Task } from "@task/shared";
+import {
+  compareHlc,
+  HLC_FUTURE_TOLERANCE_MS,
+  MAX_SYNC_CHANGES_PER_REQUEST,
+  recurringTaskId,
+  type Task,
+} from "@task/shared";
 import {
   clearLocalData,
   createProject,
@@ -32,6 +38,7 @@ async function testDb(): Promise<TaskDatabase> {
 }
 
 afterEach(async () => {
+  vi.unstubAllGlobals();
   for (const database of opened.splice(0)) {
     database.close();
     await database.delete();
@@ -443,6 +450,144 @@ describe("local database", () => {
 });
 
 describe("sync loop", () => {
+  it("keeps the cursor, local rows, and outbox unchanged when a later page fails", async () => {
+    const database = await testDb();
+    const local = await createTask("keep unsent", null, database);
+    const queued = await database.outbox.toArray();
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          upto: 9,
+          next_page: "page-2",
+          rows: [{ entity: "task", ...serverTask("remote", "partial", 9) }],
+          tombstones: [],
+          rejected: [],
+          full_resync: true,
+        }),
+      )
+      .mockRejectedValueOnce(new TypeError("connection lost"));
+
+    await expect(syncNow(database, fetcher)).rejects.toThrow("connection lost");
+    expect(await getSince(database)).toBe(0);
+    expect(await database.tasks.toArray()).toEqual([local]);
+    expect(await database.outbox.toArray()).toEqual(queued);
+
+    fetcher.mockResolvedValueOnce(
+      jsonResponse({ upto: 9, rows: [], tombstones: [], rejected: [] }),
+    );
+    await syncNow(database, fetcher);
+    expect(JSON.parse(String(fetcher.mock.calls[2]![1]?.body))).toMatchObject({
+      since: 0,
+      changes: queued.map(({ change_id, entity, id, fields }) => ({
+        change_id,
+        entity,
+        id,
+        fields,
+      })),
+    });
+    expect(await database.outbox.count()).toBe(0);
+    expect(await getSince(database)).toBe(9);
+  });
+
+  it("rejects a page whose upper bound changes without acknowledging local writes", async () => {
+    vi.stubGlobal("navigator", { onLine: true });
+    const database = await testDb();
+    await createTask("queued", null, database);
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        jsonResponse({ upto: 9, next_page: "page-2", rows: [], tombstones: [], rejected: [] }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ upto: 10, rows: [], tombstones: [], rejected: [] }));
+    const statuses: string[] = [];
+
+    await expect(syncNow(database, fetcher, (status) => statuses.push(status))).rejects.toThrow(
+      "fixed upper bound",
+    );
+    expect(statuses).toEqual(["syncing", "error"]);
+    expect(await getSince(database)).toBe(0);
+    expect(await database.outbox.count()).toBe(1);
+  });
+
+  it("batches large outboxes and retries the same change IDs after a later batch fails", async () => {
+    const database = await testDb();
+    for (let index = 0; index <= MAX_SYNC_CHANGES_PER_REQUEST; index += 1) {
+      await createTask(`queued-${index}`, null, database);
+    }
+    const queued = await database.outbox.orderBy("created_at").toArray();
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ upto: 5, rows: [], tombstones: [], rejected: [] }))
+      .mockResolvedValueOnce(jsonResponse({ error: "unavailable" }, 503));
+
+    await expect(syncNow(database, fetcher)).rejects.toThrow("503");
+    const requests = fetcher.mock.calls.map(([, init]) => JSON.parse(String(init?.body)));
+    expect(requests.map(({ changes }) => changes.length)).toEqual([
+      MAX_SYNC_CHANGES_PER_REQUEST,
+      1,
+    ]);
+    expect(requests.map(({ since }) => since)).toEqual([0, 5]);
+    expect(await getSince(database)).toBe(0);
+    expect(await database.outbox.toArray()).toHaveLength(queued.length);
+
+    fetcher.mockImplementation(async () =>
+      jsonResponse({ upto: 6, rows: [], tombstones: [], rejected: [] }),
+    );
+    await syncNow(database, fetcher);
+    const retried = fetcher.mock.calls
+      .slice(2)
+      .flatMap(([, init]) => JSON.parse(String(init?.body)).changes);
+    expect(retried.map((change: { change_id: string }) => change.change_id)).toEqual(
+      queued.map(({ change_id }) => change_id),
+    );
+    expect(await database.outbox.count()).toBe(0);
+    expect(await getSince(database)).toBe(6);
+  });
+
+  it("retains a failed purge for retry without resending acknowledged edits", async () => {
+    const database = await testDb();
+    const task = await createTask("purge retry", null, database);
+    await deleteTask(task.id, database);
+    await purgeTrash("task", task.id, database);
+    const purge = await database.outbox.filter((change) => change.operation === "purge").first();
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ upto: 5, rows: [], tombstones: [], rejected: [] }))
+      .mockResolvedValueOnce(jsonResponse({ error: "unavailable" }, 503));
+
+    await expect(syncNow(database, fetcher)).rejects.toThrow("503");
+    expect(await database.outbox.toArray()).toEqual([purge]);
+    expect(await getSince(database)).toBe(5);
+
+    fetcher
+      .mockResolvedValueOnce(jsonResponse({ upto: 5, rows: [], tombstones: [], rejected: [] }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          upto: 6,
+          rows: [],
+          tombstones: [
+            { entity: "task", id: task.id, purged_at: "2026-01-02T00:00:00.000Z", seq: 6 },
+          ],
+          rejected: [],
+        }),
+      );
+    await syncNow(database, fetcher);
+    expect(fetcher.mock.calls.map(([path]) => path)).toEqual([
+      "/api/sync",
+      "/api/trash/purge",
+      "/api/sync",
+      "/api/trash/purge",
+      "/api/sync",
+    ]);
+    expect(fetcher.mock.calls[3]![1]?.body).toBe(fetcher.mock.calls[1]![1]?.body);
+    expect(JSON.parse(String(fetcher.mock.calls[2]![1]?.body))).toEqual({ since: 5, changes: [] });
+    expect(await database.outbox.count()).toBe(0);
+    expect(await database.tasks.get(task.id)).toBeUndefined();
+    expect(await getSince(database)).toBe(6);
+  });
+
   it("reads every page before advancing the cursor", async () => {
     const database = await testDb();
     await createTask("queued change", null, database);
@@ -715,6 +860,54 @@ describe("sync loop", () => {
     expect((await database.tasks.get(localRejected.id))?.title).toBe("server title");
     expect(await database.tasks.get(tombstoned.id)).toBeUndefined();
     expect(await getSince(database)).toBe(15);
+  });
+
+  it("keeps a newer local edit when an in-flight change is rejected", async () => {
+    const database = await testDb();
+    const task = await createTask("in flight", null, database);
+    const sent = await database.outbox.toArray();
+    const fetcher = vi.fn<typeof fetch>().mockImplementationOnce(async () => {
+      await updateTask(task.id, { title: "edited while syncing" }, database);
+      return jsonResponse({
+        upto: 12,
+        rows: [],
+        tombstones: [],
+        rejected: [
+          {
+            change_id: sent[0]!.change_id,
+            entity: "task",
+            id: task.id,
+            reason: "no_fields_applied",
+            current: {
+              entity: "task",
+              ...serverTask(task.id, "server title", 12),
+              note: "remote note",
+            },
+          },
+        ],
+      });
+    });
+
+    await syncNow(database, fetcher);
+    const pending = await database.outbox.toArray();
+    expect(pending).toHaveLength(1);
+    expect(pending[0]!.fields.title?.v).toBe("edited while syncing");
+    expect((await database.tasks.get(task.id))?.title).toBe("edited while syncing");
+    expect((await database.tasks.get(task.id))?.field_ts.title).toEqual(
+      pending[0]!.fields.title?.hlc,
+    );
+    expect((await database.tasks.get(task.id))?.note).toBe("remote note");
+    expect(await getSince(database)).toBe(12);
+
+    fetcher.mockImplementationOnce(async (_path, init) => {
+      const body = JSON.parse(String(init?.body));
+      expect(body.changes).toHaveLength(1);
+      expect(body.changes[0].fields.title.v).toBe("edited while syncing");
+      return jsonResponse({ upto: 13, rows: [], tombstones: [], rejected: [] });
+    });
+    await syncNow(database, fetcher);
+    expect(await database.outbox.count()).toBe(0);
+    expect((await database.tasks.get(task.id))?.title).toBe("edited while syncing");
   });
 
   it("does not apply a rejected current row over a newer row in the same response", async () => {

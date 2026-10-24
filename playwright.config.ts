@@ -18,5 +18,7 @@ export default defineConfig({
     locale: "ja-JP",
     timezoneId: "Asia/Tokyo",
     serviceWorkers: "block",
+    trace: "retain-on-failure",
+    screenshot: "only-on-failure",
   },
 });
