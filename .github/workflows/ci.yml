@@ -36,3 +36,92 @@ jobs:
             test-results/
           if-no-files-found: ignore
           retention-days: 7
+
+  deploy:
+    needs: verify
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+    concurrency:
+      group: deploy-${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    env:
+      D1_ID: ${{ github.ref == 'refs/heads/main' && 'de04dcfd-4fb3-441c-89c0-868f5a47730c' || '68a0f133-e48d-45a5-9edc-5a361a37bb07' }}
+      WORKER: ${{ github.ref == 'refs/heads/main' && 'task-api' || 'task-api-staging' }}
+      HOST: ${{ github.ref == 'refs/heads/main' && 'task.isksss.dev' || 'task-staging.isksss.dev' }}
+      MODE: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+      SCRIPT: ${{ github.ref == 'refs/heads/main' && 'deploy:production' || 'deploy:staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Write VAPID secrets file
+        env:
+          VAPID_SECRETS_JSON: ${{ secrets.VAPID_SECRETS_JSON }}
+        run: |
+          test -n "$VAPID_SECRETS_JSON"
+          umask 077
+          printf '%s' "$VAPID_SECRETS_JSON" > .vapid-secrets.json
+      - name: Apply and verify D1 migrations
+        working-directory: apps/api
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          # The production config guard only accepts exactly "1"; staging gets an empty value.
+          TASK_ALLOW_PRODUCTION_DEPLOY: ${{ github.ref == 'refs/heads/main' && '1' || '' }}
+        run: |
+          set +e
+          timeout 300 pnpm exec cf d1 migrations apply "$D1_ID" --dir migrations --mode "$MODE"
+          apply_status=$?
+          set -e
+          # Node 24 may leave cf running after a successful migration; verify pending migrations before accepting a timeout.
+          if [[ "$apply_status" -ne 0 && "$apply_status" -ne 124 ]]; then
+            exit "$apply_status"
+          fi
+          pending=$(pnpm exec cf d1 migrations list "$D1_ID" --dir migrations --mode "$MODE")
+          printf '%s\n' "$pending"
+          if [[ "$pending" != '[]' ]]; then
+            echo "D1 migrations remain unapplied: $pending" >&2
+            exit 1
+          fi
+      - name: Deploy production
+        if: github.ref == 'refs/heads/main'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          TASK_ALLOW_PRODUCTION_DEPLOY: "1"
+        run: pnpm --filter @task/api run "$SCRIPT"
+      - name: Deploy staging
+        if: github.ref == 'refs/heads/develop'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: pnpm --filter @task/api run "$SCRIPT"
+      - name: Verify deployment
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          secrets=$(pnpm exec cf workers secrets list --worker "$WORKER")
+          printf '%s\n' "$secrets"
+          if ! grep -q 'VAPID_PRIVATE_KEY' <<< "$secrets"; then
+            echo "VAPID_PRIVATE_KEY is missing from $WORKER" >&2
+            exit 1
+          fi
+          response=$(curl --silent --show-error --max-time 30 --output /dev/null --write-out '%{http_code}\n%{redirect_url}' "https://$HOST/")
+          status=${response%%$'\n'*}
+          location=${response#*$'\n'}
+          if [[ "$status" != '302' || "$location" != *cloudflareaccess.com* ]]; then
+            echo "Expected https://$HOST/ to redirect with HTTP 302 to cloudflareaccess.com; got HTTP $status" >&2
+            exit 1
+          fi
+      - name: Remove VAPID secrets file
+        if: always()
+        run: rm -f .vapid-secrets.json

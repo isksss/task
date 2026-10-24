@@ -2,7 +2,7 @@
 
 ## 開発
 
-Node.js 24 と pnpm 12 を使用します。
+Node.js 24 と pnpm 12 を使用します。`develop` から `feature/*` または `fix/*` ブランチを作成し、develop への PR で staging に反映します。develop から main への PR をマージすると本番に反映します。
 
 ```sh
 pnpm install
@@ -34,9 +34,23 @@ API のテストは `@cloudflare/vitest-plugin`（`1.4.6`）を使い、`cloudfl
 
 ## デプロイ
 
-Cloudflare にログインした状態で、対象環境の D1 migration を適用してから Worker をデプロイしてください。リモート migration では `--local` を付けません。deploy scripts は毎回 `.vapid-secrets.json` を `--secrets-file` として渡すため、ファイルを用意してから実行してください（生成方法は「Web Push」を参照）。secret を渡さない `cf deploy` は登録済み Worker secret を削除します。
+GitHub Actions が `develop` への push で staging、`main` への push で production に自動デプロイします。`verify` 成功後、対象環境の D1 migration を適用し、未適用 migration がないことを確認してから Worker をデプロイします。完了後は Worker secret と `https://<host>/` の Cloudflare Access への 302 redirect を検証します。
 
-### staging
+GitHub に次の Environment を作成し、Deployment branches and tags をそれぞれ指定ブランチのみに制限してください。
+
+- `staging`: `develop` のみ
+- `production`: `main` のみ
+
+両 Environment に secret `CLOUDFLARE_API_TOKEN`、`VAPID_SECRETS_JSON`（`.vapid-secrets.json` の JSON 全体）と variable `CLOUDFLARE_ACCOUNT_ID` を設定します。Cloudflare API token には次の権限が必要です。
+
+- Account: Workers Scripts Edit、D1 Edit、Account Settings Read
+- Zone `isksss.dev`: Workers Routes Edit、DNS Read
+
+### 非常用のローカル手動デプロイ
+
+Cloudflare にログインし、対象環境の D1 migration を適用してから Worker をデプロイします。リモート migration では `--local` を付けません。deploy scripts は毎回 `.vapid-secrets.json` を `--secrets-file` として渡すため、ファイルを用意してから実行してください（生成方法は「Web Push」を参照）。secret を渡さない `cf deploy` は登録済み Worker secret を削除します。
+
+#### staging
 
 ```sh
 pnpm --filter @task/api exec cf d1 migrations apply 68a0f133-e48d-45a5-9edc-5a361a37bb07 --dir migrations --mode staging
@@ -44,7 +58,7 @@ pnpm --filter @task/api deploy:staging
 pnpm --filter @task/api exec cf workers secrets list --worker task-api-staging
 ```
 
-### production
+#### production
 
 ```sh
 pnpm --filter @task/api exec cf d1 migrations apply de04dcfd-4fb3-441c-89c0-868f5a47730c --dir migrations --mode production
