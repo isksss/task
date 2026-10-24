@@ -69,7 +69,7 @@ GitHub に次の Environment を作成し、Deployment branches and tags をそ�
 両 Environment に secret `CLOUDFLARE_API_TOKEN`、`VAPID_SECRETS_JSON`（`.vapid-secrets.json` の JSON 全体）と variable `CLOUDFLARE_ACCOUNT_ID` を設定します。Cloudflare API token には次の権限が必要です。
 
 - Account: Workers Scripts Edit、D1 Edit、Account Settings Read
-- Zone `isksss.dev`: Workers Routes Edit、DNS Read
+- Zone `isksss.dev`: Workers Routes Edit、Zone Read、DNS Read
 
 ### 非常用のローカル手動デプロイ
 

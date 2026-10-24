@@ -46,7 +46,7 @@ pnpm fmt:check && pnpm lint && pnpm typecheck && pnpm build && pnpm test && pnpm
 - `main` / `develop` は保護ブランチです。直接 push せず、PR と必須 `verify` を通します。
 - デプロイは GitHub Actions のみ。手動 `cf deploy` は非常用で、必ず `--secrets-file ../../.vapid-secrets.json` を指定してください。指定しないと Worker secret が消えます。
 - production の `cf build` / `cf deploy` には `TASK_ALLOW_PRODUCTION_DEPLOY=1` が必要です。これは誤操作防止用であり、権限管理の代替ではありません。
-- `workers_dev: false` と `previewUrls: false` を維持してください（Cloudflare Access の迂回防止）。
+- `apps/api/cloudflare.config.ts` の `workersDev: false` と `previewUrls: false` を維持してください（Cloudflare Access の迂回防止）。
 
 ## 実装ルール
 
