@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
 
 async function openApp(page: Page): Promise<void> {
@@ -387,4 +388,107 @@ test("cancels permanent deletion, then confirms it and persists deletion after r
   await expect(taskRow(page, title)).toHaveCount(0);
   await page.getByRole("button", { name: /^ゴミ箱/ }).click();
   await expect(row).toHaveCount(0);
+});
+
+test("discards unsaved task edits when the editor is closed with Escape", async ({ page }) => {
+  await openApp(page);
+  const title = newTitle("e2e-cancel-edit");
+  await addTask(page, title);
+  await taskRow(page, title).getByRole("button", { name: "編集", exact: true }).click();
+  const editor = page.getByRole("dialog");
+  await editor.getByLabel("タスク名", { exact: true }).first().fill(`${title}-unsaved`);
+  await editor.getByLabel("メモ", { exact: true }).fill("This must not be saved");
+  await editor.getByLabel("期限日", { exact: true }).fill("2028-02-29");
+  await editor.press("Escape");
+  await expect(editor).toHaveCount(0);
+  await expect(taskRow(page, title)).toHaveText(new RegExp(title));
+  const reloaded = waitForPullResponse(page);
+  await page.reload();
+  expect((await reloaded).ok()).toBe(true);
+  await waitUntilSynced(page);
+  await taskRow(page, title).getByRole("button", { name: "編集", exact: true }).click();
+  await expect(editor.getByLabel("タスク名", { exact: true }).first()).toHaveValue(title);
+  await expect(editor.getByLabel("メモ", { exact: true })).toHaveValue("");
+  await expect(editor.getByLabel("期限日", { exact: true })).toHaveValue("");
+});
+
+test("creates exactly one next daily occurrence across a leap-day boundary and reload", async ({
+  page,
+}) => {
+  await openApp(page);
+  const title = newTitle("e2e-recurrence");
+  const taskId = await addTask(page, title);
+  await taskRow(page, title).getByRole("button", { name: "編集", exact: true }).click();
+  const editor = page.getByRole("dialog");
+  await expect(editor.getByLabel("繰り返し", { exact: true })).toBeDisabled();
+  await editor.getByLabel("期限日", { exact: true }).fill("2028-02-29");
+  await editor.getByLabel("繰り返し", { exact: true }).selectOption("daily");
+  const configured = waitForSyncResponse(page, {
+    id: taskId,
+    fields: {
+      due_date: "2028-02-29",
+      recurrence: (value) =>
+        typeof value === "object" &&
+        value !== null &&
+        "frequency" in value &&
+        value.frequency === "daily",
+    },
+  });
+  await editor.getByRole("button", { name: "保存", exact: true }).click();
+  expect((await configured).ok()).toBe(true);
+  const completed = waitForSyncResponse(page, { id: taskId, fields: { done: true } });
+  await taskRow(page, title)
+    .getByRole("checkbox", { name: `完了にする：${title}` })
+    .click();
+  expect((await completed).ok()).toBe(true);
+  await waitUntilSynced(page);
+  await expect(taskRow(page, title)).toHaveCount(1);
+  const reloaded = waitForPullResponse(page);
+  await page.reload();
+  expect((await reloaded).ok()).toBe(true);
+  await waitUntilSynced(page);
+  await expect(taskRow(page, title)).toHaveCount(1);
+  await taskRow(page, title).getByRole("button", { name: "編集", exact: true }).click();
+  await expect(editor.getByLabel("期限日", { exact: true })).toHaveValue("2028-03-01");
+  await expect(editor.getByLabel("繰り返し", { exact: true })).toHaveValue("daily");
+  const exported = await page.request.get("/api/export");
+  expect(exported.ok()).toBe(true);
+  const data = await exported.json();
+  const occurrences = data.tasks.filter((task: { title: string }) => task.title === title);
+  expect(occurrences).toHaveLength(2);
+  expect(occurrences).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: taskId, due_date: "2028-02-29", done: true }),
+      expect.objectContaining({ due_date: "2028-03-01", done: false }),
+    ]),
+  );
+});
+
+test("downloads a JSON export containing the latest saved task fields", async ({ page }) => {
+  await openApp(page);
+  const title = newTitle("e2e-export");
+  const taskId = await addTask(page, title);
+  const note = '日本語・改行\n"quoted" <script>alert(1)</script>';
+  await taskRow(page, title).getByRole("button", { name: "編集", exact: true }).click();
+  const editor = page.getByRole("dialog");
+  await editor.getByLabel("メモ", { exact: true }).fill(note);
+  const saved = waitForSyncResponse(page, { id: taskId, fields: { note } });
+  await editor.getByRole("button", { name: "保存", exact: true }).click();
+  expect((await saved).ok()).toBe(true);
+  await page.getByRole("button", { name: "設定", exact: true }).click();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "JSON をエクスポート", exact: true }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^task-export-\d{4}-\d{2}-\d{2}\.json$/);
+  expect(await download.failure()).toBeNull();
+  const path = await download.path();
+  expect(path).not.toBeNull();
+  const data = JSON.parse(await readFile(path!, "utf8"));
+  expect(data).toMatchObject({ format: "task-export", version: 2 });
+  expect(data.tasks.find((task: { id: string }) => task.id === taskId)).toMatchObject({
+    id: taskId,
+    title,
+    note,
+    done: false,
+  });
 });
