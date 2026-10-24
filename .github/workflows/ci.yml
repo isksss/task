@@ -73,6 +73,9 @@ jobs:
           printf '%s' "$VAPID_SECRETS_JSON" > .vapid-secrets.json
       - name: Apply and verify D1 migrations
         working-directory: apps/api
+        env:
+          # The production config guard only accepts exactly "1"; staging gets an empty value.
+          TASK_ALLOW_PRODUCTION_DEPLOY: ${{ github.ref == 'refs/heads/main' && '1' || '' }}
         run: |
           set +e
           timeout 300 pnpm exec cf d1 migrations apply "$D1_ID" --dir migrations --mode "$MODE"
