@@ -26,7 +26,7 @@ pnpm e2e
 
 `pnpm smoke` は web をビルドし、development mode でローカル D1 migration を適用してから `cf dev` の HTTP 動作を確認します。`pnpm e2e` は同じ一時 D1 環境に Chromium で接続し、ブラウザー操作と同期を検証します。初回は `pnpm exec playwright install chromium` でブラウザーを導入してください。どちらも Cloudflare へのログインは不要です。
 
-Vitest では API・共有ロジック・ローカル DB に加え、同期のページ分割／バッチ送信の途中失敗、再試行、同期中の追加編集を検証します。E2E ではタスクの作成・完了・復元、オフライン／同時編集、既定値、認証切れからの復旧、完全削除のキャンセルと確定を検証します。
+Vitest では API・共有ロジック・ローカル DB に加え、同期のページ分割／バッチ送信の途中失敗、再試行、同期中の追加編集（タスク・プロジェクト・タグ・タグ紐付け・設定）、認証／応答異常、全件再同期と削除競合を検証します。E2E ではタスクの作成・完了・復元、オフライン／同時編集、既定値、認証切れからの復旧、完全削除のキャンセルと確定、編集キャンセル、うるう日をまたぐ繰り返しタスク、JSON エクスポートを検証します。
 
 E2E の HTML レポートは `playwright-report/` に出力されます。失敗時はスクリーンショットとトレースを `test-results/` に保存し、CI では両方を `playwright-report` artifact として 7 日間保持します。ローカルのレポートは `pnpm exec playwright show-report` で開けます。
 
