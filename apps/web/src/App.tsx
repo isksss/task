@@ -259,6 +259,8 @@ export default function App() {
   const [sorts, setSorts] = useState<Record<string, TaskSort>>(loadSorts);
   const [showCompleted, setShowCompleted] = useState(false);
   const [quickTitle, setQuickTitle] = useState("");
+  const [quickProjectId, setQuickProjectId] = useState<string | null>(null);
+  const [quickPriority, setQuickPriority] = useState<Priority>(0);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editingDueDate, setEditingDueDate] = useState("");
   const [recurrenceFrequency, setRecurrenceFrequency] = useState("none");
@@ -440,6 +442,30 @@ export default function App() {
   const visibleDefaultProjectId = activeProjects.some(({ id }) => id === defaultProjectId)
     ? (defaultProjectId ?? "")
     : "";
+  const selectedProjectDeletedAt = selectedProject?.deleted_at;
+  const { projectId: resolvedQuickProjectId, priority: resolvedQuickPriority } =
+    resolveTaskCreationDefaults(
+      view,
+      selectedProjectDeletedAt === null ? selectedProjectId : null,
+      defaultProjectId,
+      activeProjects,
+      defaultPriority,
+    );
+  const quickProjectValue = activeProjects.some(({ id }) => id === quickProjectId)
+    ? (quickProjectId ?? "")
+    : "";
+  useEffect(() => {
+    setQuickProjectId(resolvedQuickProjectId);
+    setQuickPriority(resolvedQuickPriority);
+  }, [
+    view,
+    selectedProjectId,
+    selectedProjectDeletedAt,
+    defaultProjectId,
+    defaultPriority,
+    resolvedQuickProjectId,
+    resolvedQuickPriority,
+  ]);
   const activeTags = useMemo(() => tags.filter(({ deleted_at }) => deleted_at === null), [tags]);
   const taggedTaskIds = new Set(
     taskTags
@@ -525,15 +551,8 @@ export default function App() {
     event.preventDefault();
     const title = quickTitle;
     if (!title.trim()) return;
-    const { projectId, priority } = resolveTaskCreationDefaults(
-      view,
-      selectedProject?.deleted_at === null ? selectedProject.id : null,
-      defaultProjectId,
-      activeProjects,
-      defaultPriority,
-    );
     void act(async () => {
-      await createTask(title, projectId, db, null, priority);
+      await createTask(title, quickProjectId, db, null, quickPriority, true);
       setQuickTitle("");
     });
   };
@@ -1222,26 +1241,59 @@ export default function App() {
             )}
 
           {view !== "trash" && view !== "calendar" && view !== "settings" && (
-            <form className={styles.quickAdd} onSubmit={submitQuickTask}>
-              <span className={styles.addMark} aria-hidden="true">
-                ＋
-              </span>
-              <label className={styles.srOnly} htmlFor="quick-task-title">
-                {t.taskTitle}
-              </label>
-              <input
-                id="quick-task-title"
-                type="text"
-                value={quickTitle}
-                onChange={(event) => setQuickTitle(event.target.value)}
-                placeholder={t.addTask}
-                maxLength={MAX_TITLE_LENGTH}
-                required
-              />
-              <button type="submit" className={styles.smallPrimary}>
-                {t.addTask}
-              </button>
-            </form>
+            <>
+              <form className={styles.quickAdd} onSubmit={submitQuickTask}>
+                <span className={styles.addMark} aria-hidden="true">
+                  ＋
+                </span>
+                <label className={styles.srOnly} htmlFor="quick-task-title">
+                  {t.taskTitle}
+                </label>
+                <input
+                  id="quick-task-title"
+                  type="text"
+                  value={quickTitle}
+                  onChange={(event) => setQuickTitle(event.target.value)}
+                  placeholder={t.addTask}
+                  maxLength={MAX_TITLE_LENGTH}
+                  required
+                />
+                <button type="submit" className={styles.smallPrimary}>
+                  {t.addTask}
+                </button>
+              </form>
+              <div className={styles.quickAddOptions}>
+                <label className={styles.srOnly} htmlFor="quick-task-project">
+                  {t.project}
+                </label>
+                <select
+                  id="quick-task-project"
+                  value={quickProjectValue}
+                  onChange={(event) => setQuickProjectId(event.target.value || null)}
+                >
+                  <option value="">{t.noProject}</option>
+                  {defaultProjectOptions.map(({ project, depth }) => (
+                    <option key={project.id} value={project.id}>
+                      {`${"— ".repeat(depth)}${project.name || t.projects}`}
+                    </option>
+                  ))}
+                </select>
+                <label className={styles.srOnly} htmlFor="quick-task-priority">
+                  {t.taskPriority}
+                </label>
+                <select
+                  id="quick-task-priority"
+                  value={quickPriority}
+                  onChange={(event) => setQuickPriority(Number(event.target.value) as Priority)}
+                >
+                  {priorityLabels.map((label, priority) => (
+                    <option key={priority} value={priority}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </>
           )}
 
           {view === "trash" ? (
@@ -1750,7 +1802,7 @@ export default function App() {
                     maxLength={MAX_NOTE_LENGTH}
                     rows={4}
                   />
-                  <label htmlFor="edit-task-priority">{t.priority}</label>
+                  <label htmlFor="edit-task-priority">{t.taskPriority}</label>
                   <select
                     id="edit-task-priority"
                     name="priority"
