@@ -9,6 +9,39 @@ async function openApp(page: Page): Promise<void> {
   await waitUntilSynced(page);
 }
 
+async function dispatchTouchSwipe(
+  page: Page,
+  fromX: number,
+  toX: number,
+  y = 400,
+  toY = y,
+): Promise<void> {
+  await page.evaluate(
+    ({ fromX, toX, y, toY }) => {
+      const target = document.elementFromPoint(fromX, y);
+      if (!target) throw new Error("Touch start target not found");
+      const makeTouch = (clientX: number, clientY = y) =>
+        new Touch({ identifier: 1, target, clientX, clientY });
+      const start = makeTouch(fromX);
+      target.dispatchEvent(
+        new TouchEvent("touchstart", {
+          touches: [start],
+          changedTouches: [start],
+          bubbles: true,
+        }),
+      );
+      target.dispatchEvent(
+        new TouchEvent("touchend", {
+          touches: [],
+          changedTouches: [makeTouch(toX, toY)],
+          bubbles: true,
+        }),
+      );
+    },
+    { fromX, toX, y, toY },
+  );
+}
+
 function taskRow(page: Page, title: string) {
   return page
     .getByRole("list", { name: "すべて", exact: true })
@@ -116,6 +149,37 @@ async function addTask(page: Page, title: string): Promise<string> {
 function newTitle(prefix: string): string {
   return `${prefix}-${randomUUID()}`;
 }
+
+test.describe("mobile navigation swipe", () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+  test("opens with a right swipe and closes with a left swipe", async ({ page }) => {
+    await openApp(page);
+    const menuButton = page.locator('button[aria-controls="sidebar"]');
+    await expect(menuButton).toHaveAttribute("aria-expanded", "false");
+
+    const quickAddBox = await page
+      .getByRole("textbox", { name: "タスク名", exact: true })
+      .boundingBox();
+    expect(quickAddBox).not.toBeNull();
+    const quickAddX = quickAddBox!.x + quickAddBox!.width / 2;
+    const quickAddY = quickAddBox!.y + quickAddBox!.height / 2;
+    await dispatchTouchSwipe(page, quickAddX, quickAddX + 90, quickAddY);
+    await expect(menuButton).toHaveAttribute("aria-expanded", "false");
+
+    await dispatchTouchSwipe(page, 140, 230, 400, 520);
+    await expect(menuButton).toHaveAttribute("aria-expanded", "false");
+
+    await dispatchTouchSwipe(page, 140, 230);
+    await expect(menuButton).toHaveAttribute("aria-expanded", "true");
+    await expect(
+      page.locator("#sidebar").getByRole("button", { name: "すべて", exact: true }),
+    ).toBeFocused();
+    await dispatchTouchSwipe(page, 340, 250);
+    await expect(menuButton).toHaveAttribute("aria-expanded", "false");
+    await expect(menuButton).toBeFocused();
+  });
+});
 
 test("creates, completes, trashes, and restores a task", async ({ page }) => {
   await openApp(page);
