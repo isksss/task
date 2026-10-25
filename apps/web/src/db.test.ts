@@ -152,6 +152,17 @@ describe("local database", () => {
     expect((await database.outbox.toArray())[0]?.fields.priority?.v).toBe(3);
   });
 
+  it("falls back to the inbox for an inactive project only when requested", async () => {
+    const database = await testDb();
+    const project = await createProject("Deleted project", null, database);
+    await deleteProject(project.id, database);
+
+    await expect(createTask("Strict task", project.id, database)).rejects.toThrow(/project/i);
+    const task = await createTask("Fallback task", project.id, database, null, 2, true);
+
+    expect(task).toMatchObject({ project_id: null, priority: 2 });
+  });
+
   it("writes tags as independent LWW relationships", async () => {
     const database = await testDb();
     const task = await createTask("Tagged task", null, database);

@@ -253,6 +253,57 @@ test("applies configured defaults to new tasks in All", async ({ page }) => {
   expect((await taskSync).ok()).toBe(true);
 });
 
+test("creates a quick task with the selected project and priority", async ({ page }) => {
+  await openApp(page);
+  await page.getByRole("button", { name: "設定", exact: true }).click();
+  const defaultPriority = await page.getByLabel("既定の優先度").inputValue();
+  await page.getByRole("button", { name: "すべて", exact: true }).click();
+  const projectName = newTitle("e2e-quick-project");
+  await page.getByRole("button", { name: "プロジェクトを作成", exact: true }).click();
+  const projectForm = page.locator("form").filter({ has: page.getByLabel("プロジェクト名") });
+  await projectForm.getByLabel("プロジェクト名").fill(projectName);
+  const projectSync = waitForSyncChange(page, "project", { name: projectName });
+  await projectForm.getByRole("button", { name: "プロジェクトを作成", exact: true }).click();
+  const projectResponse = await projectSync;
+  expect(projectResponse.ok()).toBe(true);
+  const projectId = (
+    projectResponse.request().postDataJSON() as {
+      changes: Array<{ entity: string; id: string; fields?: Record<string, { v?: unknown }> }>;
+    }
+  ).changes.find(
+    (change) => change.entity === "project" && change.fields?.name?.v === projectName,
+  )?.id;
+  expect(projectId).toBeTruthy();
+
+  const quickAdd = page.getByRole("region", { name: "すべて" });
+  const projectSelect = quickAdd.getByLabel("プロジェクト", { exact: true });
+  await expect(projectSelect.locator("option").filter({ hasText: projectName })).toHaveCount(1);
+  const quickPriority = quickAdd.getByLabel("優先度", { exact: true });
+  await projectSelect.selectOption(projectId!);
+  await quickPriority.selectOption("2");
+  const title = newTitle("e2e-quick-task");
+  await page.getByRole("textbox", { name: "タスク名", exact: true }).fill(title);
+  const taskSync = waitForSyncResponse(page, {
+    fields: { title, project_id: projectId!, priority: 2 },
+  });
+  await page.getByRole("button", { name: "タスクを追加", exact: true }).click();
+  await expect(taskRow(page, title)).toBeVisible();
+  expect((await taskSync).ok()).toBe(true);
+  await expect(page.getByRole("textbox", { name: "タスク名", exact: true })).toHaveValue("");
+  await expect(projectSelect).toHaveValue(projectId!);
+  await expect(quickPriority).toHaveValue("2");
+
+  await projectSelect.selectOption("");
+  await quickPriority.selectOption(defaultPriority === "2" ? "3" : "2");
+  await page
+    .getByRole("navigation", { name: "プロジェクト" })
+    .getByRole("button", { name: projectName, exact: true })
+    .click();
+  const projectQuickAdd = page.getByRole("region", { name: projectName });
+  await expect(projectQuickAdd.getByLabel("プロジェクト", { exact: true })).toHaveValue(projectId!);
+  await expect(projectQuickAdd.getByLabel("優先度", { exact: true })).toHaveValue(defaultPriority);
+});
+
 test("keeps concurrent edits to different task fields", async ({ page, browser }) => {
   await openApp(page);
   const title = newTitle("e2e-concurrent");
