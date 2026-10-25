@@ -349,12 +349,14 @@ export async function createTask(
   database = db,
   parentTaskId: string | null = null,
   priority: Task["priority"] = 0,
+  fallbackToInbox = false,
 ): Promise<Task> {
   const normalizedTitle = title.trim();
   if (!normalizedTitle || [...normalizedTitle].length > MAX_TITLE_LENGTH) {
     throw new RangeError(`Task title must contain 1-${MAX_TITLE_LENGTH} characters`);
   }
   if (![0, 1, 2, 3].includes(priority)) throw new RangeError("Invalid priority");
+  let effectiveProjectId = projectId;
   return database.transaction(
     "rw",
     database.tasks,
@@ -363,16 +365,18 @@ export async function createTask(
     database.meta,
     async () => {
       validateTaskParent(await database.tasks.toArray(), "", parentTaskId);
-      if (projectId !== null) {
-        const project = await database.projects.get(projectId);
-        if (!project || project.deleted_at !== null)
-          throw new RangeError("Project does not exist or is in the trash");
+      if (effectiveProjectId !== null) {
+        const project = await database.projects.get(effectiveProjectId);
+        if (!project || project.deleted_at !== null) {
+          if (!fallbackToInbox) throw new RangeError("Project does not exist or is in the trash");
+          effectiveProjectId = null;
+        }
       }
       const id = crypto.randomUUID();
       const defaults = taskDefaults(id);
       const hlc = await nextLocalHlc(database);
       const fields: TaskFields = {
-        project_id: projectId,
+        project_id: effectiveProjectId,
         parent_task_id: parentTaskId,
         recurrence: null,
         title: normalizedTitle,
