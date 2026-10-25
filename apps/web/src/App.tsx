@@ -352,6 +352,52 @@ export default function App() {
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [isMobile, sidebarOpen]);
 
+  useEffect(() => {
+    if (!isMobile) return;
+    let touchStart: { x: number; y: number } | null = null;
+    const onTouchStart = (event: TouchEvent) => {
+      touchStart = null;
+      if (event.touches.length !== 1 || !(event.target instanceof Element)) return;
+      const target = event.target;
+      if (target.closest("input, textarea, select, [contenteditable]")) return;
+      for (let element: Element | null = target; element; element = element.parentElement) {
+        const { overflowX } = getComputedStyle(element);
+        if (
+          element.scrollWidth > element.clientWidth &&
+          (overflowX === "auto" || overflowX === "scroll")
+        )
+          return;
+      }
+      const touch = event.touches[0];
+      touchStart = { x: touch.clientX, y: touch.clientY };
+    };
+    const onTouchEnd = (event: TouchEvent) => {
+      if (!touchStart || event.changedTouches.length !== 1 || event.touches.length !== 0) {
+        touchStart = null;
+        return;
+      }
+      const start = touchStart;
+      touchStart = null;
+      const touch = event.changedTouches[0];
+      const dx = touch.clientX - start.x;
+      const dy = touch.clientY - start.y;
+      if (Math.abs(dx) < 60 || Math.abs(dx) <= Math.abs(dy) * 1.5) return;
+      if (dx > 0 && !sidebarOpen) setSidebarOpen(true);
+      else if (dx < 0 && sidebarOpen) setSidebarOpen(false);
+    };
+    const onTouchCancel = () => {
+      touchStart = null;
+    };
+    document.addEventListener("touchstart", onTouchStart, { passive: true });
+    document.addEventListener("touchend", onTouchEnd, { passive: true });
+    document.addEventListener("touchcancel", onTouchCancel, { passive: true });
+    return () => {
+      document.removeEventListener("touchstart", onTouchStart);
+      document.removeEventListener("touchend", onTouchEnd);
+      document.removeEventListener("touchcancel", onTouchCancel);
+    };
+  }, [isMobile, sidebarOpen]);
+
   const refresh = useCallback(async () => {
     const [nextTasks, nextProjects, nextTags, nextTaskTags, settings] = await Promise.all([
       db.tasks.toArray(),
