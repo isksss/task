@@ -1,5 +1,24 @@
 # task
 
+`task` は、個人で使うタスク管理 PWA です。タスクはオフラインでも編集でき、オンライン復帰後に端末間で同期します。Web Push による通知にも対応しています。
+
+- タスク、階層化プロジェクト、タグ、サブタスク、繰り返しタスク
+- 月・週カレンダー、ゴミ箱、既定の優先度・プロジェクト
+- JSON エクスポート、日本語・英語、ライト・ダーク表示
+
+## 構成
+
+pnpm monorepo で、`apps/web` が React の PWA、`apps/api` が API と Cloudflare Worker、`packages/shared` が共有の型・同期ロジックです。Web のビルド成果物は `apps/api/public` に出力され、単一の Worker が画面と API を配信します。データは D1 に保存し、Cron で通知送信と期限切れデータの削除を行います。staging / production の認証には Cloudflare Access を使います。
+
+端末の編集内容は Dexie（IndexedDB）に保存します。同期ではフィールド単位の LWW（HLC で順序付け）、ユーザー単位で単調増加する `seq` とカーソルによるページ取得を使い、完全削除後も tombstone で他端末に削除を伝えます。
+
+## 環境
+
+- 本番: <https://task.isksss.dev>
+- staging: <https://task-staging.isksss.dev>
+
+どちらも Cloudflare Access で保護されています。`workers.dev` と preview URL は無効です。
+
 ## 開発
 
 Node.js 24 と pnpm 12 を使用します。`develop` から `feature/*` または `fix/*` ブランチを作成し、develop への PR で staging に反映します。develop から main への PR をマージすると本番に反映します。
@@ -19,6 +38,7 @@ pnpm typecheck
 pnpm build
 pnpm test
 pnpm smoke
+pnpm check:prod-guard
 pnpm e2e
 ```
 
@@ -32,9 +52,14 @@ E2E の HTML レポートは `playwright-report/` に出力されます。失敗
 
 API のテストは `@cloudflare/vitest-plugin`（`1.4.6`）を使い、`cloudflare.config.ts` の設定を読み込んで Miniflare 上のローカル D1 で動きます。テストでは `remoteBindings: false` とし、Cloudflare ログインを必要としません。
 
-## デプロイ
+## ブランチ運用とデプロイ
 
-GitHub Actions が `develop` への push で staging、`main` への push で production に自動デプロイします。`verify` 成功後、対象環境の D1 migration を適用し、未適用 migration がないことを確認してから Worker をデプロイします。完了後は Worker secret と `https://<host>/` の Cloudflare Access への 302 redirect を検証します。
+`main` と `develop` は保護ブランチです。直接 push せず、PR と `verify` の成功を必須にします。
+
+1. `develop` から `feature/*` または `fix/*` を作成し、develop 向けに PR を作成します。マージ後、GitHub Actions が staging にデプロイします。
+2. staging で確認後、develop から main への PR を作成します。マージ後、GitHub Actions が本番にデプロイします。
+
+デプロイは `verify` 成功後に行います。対象環境の D1 migration を適用し、未適用 migration がないことを確認してから Worker をデプロイします。完了後は Worker secret と `https://<host>/` の Cloudflare Access への 302 redirect を検証します。
 
 GitHub に次の Environment を作成し、Deployment branches and tags をそれぞれ指定ブランチのみに制限してください。
 
@@ -44,7 +69,7 @@ GitHub に次の Environment を作成し、Deployment branches and tags をそ�
 両 Environment に secret `CLOUDFLARE_API_TOKEN`、`VAPID_SECRETS_JSON`（`.vapid-secrets.json` の JSON 全体）と variable `CLOUDFLARE_ACCOUNT_ID` を設定します。Cloudflare API token には次の権限が必要です。
 
 - Account: Workers Scripts Edit、D1 Edit、Account Settings Read
-- Zone `isksss.dev`: Workers Routes Edit、DNS Read
+- Zone `isksss.dev`: Workers Routes Edit、Zone Read、DNS Read
 
 ### 非常用のローカル手動デプロイ
 
@@ -87,4 +112,4 @@ umask 077
 node scripts/generate-vapid-key.mjs > .vapid-secrets.json
 ```
 
-`.vapid-secrets.json` は Git 管理対象外です。deploy 後は「デプロイ」に記載した `cf workers secrets list --worker <name>` で `VAPID_PRIVATE_KEY` を確認してください。鍵の再生成・変更時は既存の Push 購読との互換性を保つため、鍵を失効させる影響を確認してください。staging / production で secret が未設定または不正な場合、Push 送信はスキップしてログに記録されます。
+`.vapid-secrets.json` は Git 管理対象外です。deploy 後は「ブランチ運用とデプロイ」に記載した `cf workers secrets list --worker <name>` で `VAPID_PRIVATE_KEY` を確認してください。鍵の再生成・変更時は既存の Push 購読との互換性を保つため、鍵を失効させる影響を確認してください。staging / production で secret が未設定または不正な場合、Push 送信はスキップしてログに記録されます。
